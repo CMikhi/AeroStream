@@ -4,6 +4,7 @@ import threading
 
 app = FastAPI()
 
+# Request models
 class AuthRequest(BaseModel):
     username: str
 
@@ -17,24 +18,27 @@ class MessageRequest(BaseModel):
 
 command_lock = threading.Lock()  # Prevent race conditions
 
+
+# auth routes
 @app.get("/")  # Define a route for "/"
 async def root():
     return {"message": "Hello, FastAPI is working!"}
+
+@app.post("/register")
+async def register(data: AuthRequest):
+    pass
 
 @app.get("/login")
 async def login():
     pass
 
+# room routes
 @app.get("/join_room")
-async def join_room():
+async def join_room(data: RoomRequest):
     pass
       
-@app.post("/register")
-async def register(data: AuthRequest):
-    pass
-
 @app.post("/create_room")
-async def create_room(data: AuthRequest):
+async def create_room(data: RoomRequest):
     pass
 
 @app.post("/send_message")
