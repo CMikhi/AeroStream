@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from roomService import RoomService
 import threading
 import dbManager
 
@@ -8,6 +9,10 @@ app = FastAPI()
 global db_manager  # Database manager instance
 db_manager = dbManager.DatabaseManager("database.db")
 db_manager.create_connection()
+
+global room_service # Room Service instance
+room_service = RoomService(db_manager)
+
 
 # Request models
 class AuthRequest(BaseModel):
@@ -33,12 +38,12 @@ async def root():
 async def register(data: AuthRequest):
     pass
 
-@app.post("/login")
+@app.get("/login")
 async def login():
     pass
 
 # room routes
-@app.post("/join_room")
+@app.get("/join_room")
 async def join_room(data: RoomRequest):
     pass
       
@@ -49,7 +54,6 @@ async def create_room(data: RoomRequest):
 @app.post("/send_message")
 async def send_message(data: MessageRequest):
     pass
-
 
 
 
