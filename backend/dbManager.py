@@ -46,6 +46,12 @@ class DatabaseManager:
                 print("No database connection.")
         except Error as e:
             print(f"Error executing query: {e}")
+            
+    def push_data(self, table, data):
+        """Insert data into a specified table."""
+        placeholders = ', '.join(['?'] * len(data))
+        query = f"INSERT INTO {table} VALUES ({placeholders})"
+        self.execute_query(query, data)
 
     def fetch_all(self, query, params=None):
         """Fetch all rows for a given query."""
@@ -71,7 +77,7 @@ class DatabaseManager:
 
 # Example usage:
 if __name__ == "__main__":
-    db_manager = DatabaseManager("example.db")
+    db_manager = DatabaseManager("database.db")
     db_manager.create_connection()
 
     # Create tables for users, rooms, and messages
