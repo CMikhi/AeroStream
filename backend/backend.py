@@ -6,14 +6,47 @@ from datetime import datetime, timedelta, timezone
 import os
 from passlib.context import CryptContext
 
+'''
+
+
+This is a simple chat backend using FastAPI, JWT for authentication, and SQLite for storage.
+I'll explain how the flow of this backend works:
+
+1. dbManager, essentially just a thin wrapper around sqlite3 with per-op connections and some convenience methods.
+   This allows for it to handle the threading, locking, and connection management for you. It also handles the creation
+   of the database file if it doesn't exist.
+
+2. FastAPI app with routes for user registration, login, room creation/joining, and message sending.
+   - Registration hashes passwords before storing them.
+   - Login verifies passwords and issues JWTs.
+   - Protected routes require a valid JWT, verified via a dependency.
+   - Rooms and messages are stored in the database with appropriate foreign keys.
+   
+   What is JWT? 
+    JSON Web Tokens (JWT) are a compact, URL-safe means of representing claims to be transferred between two parties.
+    They are commonly used for authentication and information exchange in web applications. It ensures that user data
+    like raw passwords is not easily intercepted or misused. It also ensures that the users are who they say they are.
+    They are created by using a secret key (the one above), and then verified using the same key. Normally you would use
+    a .env and a very secure key, but this is just for demo purposes.
+
+3. Passwords are hashed using bcrypt via passlib, which is a secure way to store passwords.
+   We never store plain text passwords as that's bad practice.
+   
+4. We send all information as JSON over HTTP, which is standard for RESTful APIs.
+
+
+'''
+
 # app
 app = FastAPI()
 
 # JWT config
+
+# You don;t need a .env, this isn't prod and is simply just for fun
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     # in dev this is okay, but in production fail fast so people don't run with a bad secret
-    SECRET_KEY = "SUPERSECRETKEY12345!"
+    SECRET_KEY = "SUPERSECRETKEY12345!" # W
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -56,7 +89,6 @@ def create_access_token(subject: str, expires_delta: timedelta = None):
         "sub": subject,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
-        # optionally "iss": "your-service", "aud": "your-audience"
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return token
@@ -105,6 +137,8 @@ def get_current_user(token_payload: dict = Depends(verify_token)):
 async def root():
     return {"message": "Hello, FastAPI is working!"}
 
+# this is how we create new users
+# First we check if the password is long enough, we make sure the username is not taken, and then hash the password before storing
 @app.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(data: AuthRequest):
     if len(data.password) < 6:
@@ -117,6 +151,7 @@ async def register(data: AuthRequest):
     db_manager.execute_query("INSERT INTO users (username, password) VALUES (?, ?)", (data.username, hashed))
     return {"message": "User created"}
 
+# Login route: verify password and return JWT
 @app.post("/login", response_model=TokenResponse)
 async def login(data: AuthRequest):
     users = db_manager.fetch_all("SELECT * FROM users WHERE username = ?", (data.username,))
@@ -131,7 +166,7 @@ async def login(data: AuthRequest):
     access_token = create_access_token(subject=data.username, expires_delta=access_token_expires)
     return {"access_token": access_token, "token_type": "bearer"}
 
-# Note: changed to POST because GET with body is non-standard
+# Route to join a room (checks if room exists)
 @app.post("/join_room")
 async def join_room(data: RoomRequest, current_user: dict = Depends(get_current_user)):
     rooms = db_manager.fetch_all("SELECT * FROM rooms WHERE room_key = ?", (data.room_name,))
@@ -139,11 +174,15 @@ async def join_room(data: RoomRequest, current_user: dict = Depends(get_current_
         return {"message": "Joined room successfully"}
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
 
+# Route to create a room, takes in a room name and a user then creates the room
 @app.post("/create_room")
 async def create_room(data: RoomRequest, current_user: dict = Depends(get_current_user)):
     db_manager.execute_query("INSERT INTO rooms (room_key, created_by) VALUES (?, ?)", (data.room_name, current_user["id"]))
     return {"message": "Room created successfully"}
 
+
+# Route to send a message to a room
+# Takes a room name and message, checks if the room exists, then stores the message with the user and room ids
 @app.post("/send_message")
 async def send_message(data: MessageRequest, current_user: dict = Depends(get_current_user)):
     rooms = db_manager.fetch_all("SELECT id FROM rooms WHERE room_key = ?", (data.room_name,))

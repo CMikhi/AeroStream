@@ -1,3 +1,5 @@
+// Just use the test client for these now
+
 Auth Endpoints:
 
 curl -X POST "http://localhost:8000/register" \
@@ -16,6 +18,7 @@ curl -X POST "http://localhost:8000/create_room" \
   -H "Content-Type: application/json" \
   -d '{"room_name": "general"}'
 
+# example jwt
 "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlciIsImV4cCI6MTc1ODU1OTMxMH0.61psKerknlxHUnKx5bKx2Ua_v3N5llncBb95QtzsP5g"
 
 Run command: .venv/bin/uvicorn backend.backend:app --reload --host 0.0.0.0 --port 8000

@@ -12,7 +12,7 @@ class DatabaseManager:
     def _connect(self) -> sqlite3.Connection:
         """
         Create and return a fresh sqlite3.Connection.
-        Each thread/request should use its own connection to avoid "objects created in a thread" errors.
+        Each thread/request uses it's own connection as SQLite is NOT thread-safe
         """
         # check_same_thread=False is not required for per-connection usage but harmless.
         conn = sqlite3.connect(self.db_file, timeout=30, detect_types=sqlite3.PARSE_DECLTYPES, check_same_thread=False)
