@@ -28,12 +28,12 @@ async def root():
 async def register(data: AuthRequest):
     pass
 
-@app.get("/login")
+@app.post("/login")
 async def login():
     pass
 
 # room routes
-@app.get("/join_room")
+@app.post("/join_room")
 async def join_room(data: RoomRequest):
     pass
       
