@@ -38,7 +38,7 @@ async def create_room(data: AuthRequest):
     pass
 
 @app.post("/send_message")
-async def send_message(data: CommandRequest):
+async def send_message(data: MessageRequest):
     pass
 
 
