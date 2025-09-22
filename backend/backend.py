@@ -1,8 +1,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from roomService import RoomService
 import threading
 
 app = FastAPI()
+
+global room_service
+room_service = RoomService()
+
 
 # Request models
 class AuthRequest(BaseModel):
