@@ -8,34 +8,14 @@ import os
 from passlib.context import CryptContext
 
 '''
+API for chat TUI using FastAPI, JWT, and SQLite
 
-
-This is a simple chat backend using FastAPI, JWT for authentication, and SQLite for storage.
-I'll explain how the flow of this backend works:
-
-1. dbManager, essentially just a thin wrapper around sqlite3 with per-op connections and some convenience methods.
-   This allows for it to handle the threading, locking, and connection management for you. It also handles the creation
-   of the database file if it doesn't exist.
-
-2. FastAPI app with routes for user registration, login, room creation/joining, and message sending.
-   - Registration hashes passwords before storing them.
-   - Login verifies passwords and issues JWTs.
-   - Protected routes require a valid JWT, verified via a dependency.
-   - Rooms and messages are stored in the database with appropriate foreign keys.
-   
-   What is JWT? 
-    JSON Web Tokens (JWT) are a compact, URL-safe means of representing claims to be transferred between two parties.
-    They are commonly used for authentication and information exchange in web applications. It ensures that user data
-    like raw passwords is not easily intercepted or misused. It also ensures that the users are who they say they are.
-    They are created by using a secret key (the one above), and then verified using the same key. Normally you would use
-    a .env and a very secure key, but this is just for demo purposes.
-
-3. Passwords are hashed using bcrypt via passlib, which is a secure way to store passwords.
-   We never store plain text passwords as that's bad practice.
-   
-4. We send all information as JSON over HTTP, which is standard for RESTful APIs.
-
-
+1. dbManager is a database management utility that simplifies interactions with SQLite.
+2. FastAPI app handles HTTP requests and responses.
+3. RoomService manages chat rooms and their participants.
+4. LoginService manages user authentication and JWT issuance.
+    - Passwords are hashed using bcrypt via passlib.
+5. Responses are sent using JSON with status codes and messages.
 '''
 
 # app
