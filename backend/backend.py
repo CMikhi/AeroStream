@@ -4,11 +4,16 @@ import threading
 
 app = FastAPI()
 
-class CommandRequest(BaseModel):
-    command: str
+class AuthRequest(BaseModel):
+    username: str
+
+class RoomRequest(BaseModel):
+    room_name: str
     
-
-
+class MessageRequest(BaseModel):
+    username: str
+    room_name: str
+    message: str
 
 command_lock = threading.Lock()  # Prevent race conditions
 
@@ -25,11 +30,11 @@ async def join_room():
     pass
       
 @app.post("/register")
-async def register(data: CommandRequest):
+async def register(data: AuthRequest):
     pass
 
 @app.post("/create_room")
-async def create_room(data: CommandRequest):
+async def create_room(data: AuthRequest):
     pass
 
 @app.post("/send_message")
