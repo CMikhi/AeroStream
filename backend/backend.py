@@ -151,6 +151,7 @@ async def register(data: AuthRequest):
     db_manager.execute_query("INSERT INTO users (username, password) VALUES (?, ?)", (data.username, hashed))
     return {"message": "User created"}
 
+
 # Login route: verify password and return JWT
 @app.post("/login", response_model=TokenResponse)
 async def login(data: AuthRequest):
