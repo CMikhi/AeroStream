@@ -1,8 +1,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import threading
+import dbManager
 
 app = FastAPI()
+
+global db_manager  # Database manager instance
+db_manager = dbManager.DatabaseManager("database.db")
+db_manager.create_connection()
 
 # Request models
 class AuthRequest(BaseModel):

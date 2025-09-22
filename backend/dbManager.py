@@ -1,5 +1,6 @@
 import sqlite3
 from sqlite3 import Error
+import os
 
 class DatabaseManager:
     def __init__(self, db_file):
@@ -10,7 +11,10 @@ class DatabaseManager:
     def create_connection(self):
         """Create a database connection to the SQLite database."""
         try:
+            db_exists = os.path.exists(self.db_file)
             self.connection = sqlite3.connect(self.db_file)
+            if not db_exists:
+                print(f"Created new database file: {self.db_file}")
             print(f"Connection to SQLite DB '{self.db_file}' successful.")
         except Error as e:
             print(f"Error connecting to database: {e}")
@@ -42,6 +46,12 @@ class DatabaseManager:
                 print("No database connection.")
         except Error as e:
             print(f"Error executing query: {e}")
+            
+    def push_data(self, table, data):
+        """Insert data into a specified table."""
+        placeholders = ', '.join(['?'] * len(data))
+        query = f"INSERT INTO {table} VALUES ({placeholders})"
+        self.execute_query(query, data)
 
     def fetch_all(self, query, params=None):
         """Fetch all rows for a given query."""
@@ -67,20 +77,42 @@ class DatabaseManager:
 
 # Example usage:
 if __name__ == "__main__":
-    db_manager = DatabaseManager("example.db")
+    db_manager = DatabaseManager("database.db")
     db_manager.create_connection()
 
-    create_table_sql = """
+    # Create tables for users, rooms, and messages
+    create_users_table = """
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        age INTEGER,
-        email TEXT
+        username TEXT NOT NULL UNIQUE
     );
     """
-    db_manager.create_table(create_table_sql)
+    
+    create_rooms_table = """
+    CREATE TABLE IF NOT EXISTS rooms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT NOT NULL UNIQUE,
+        created_by INTEGER,
+        FOREIGN KEY (created_by) REFERENCES users (id)
+    );
+    """
+    
+    create_messages_table = """
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        room_id INTEGER,
+        content TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (room_id) REFERENCES rooms (id)
+    );
+    """
+    
+    db_manager.create_table(create_users_table)
+    db_manager.create_table(create_rooms_table)
+    db_manager.create_table(create_messages_table)
 
-    db_manager.execute_query("INSERT INTO users (name, age, email) VALUES (?, ?, ?)", ("John Doe", 30, "john@example.com"))
+    db_manager.execute_query("INSERT INTO users (username) VALUES (?)", ("John Doe",))
     users = db_manager.fetch_all("SELECT * FROM users")
     print(users)
 
