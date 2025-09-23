@@ -23,7 +23,7 @@ app = FastAPI()
 # JWT config
 
 # You don;t need a .env, this isn't prod and is simply just for fun
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = "SUPERSECRETKEY12345!"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -35,7 +35,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Database manager (your module)
 from . import dbManager
-db_manager = dbManager.DatabaseManager("database.db")
+
+# Get the correct path to database.db (one level up from backend directory)
+db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "database.db")
+db_manager = dbManager.DatabaseManager(db_path)
 db_manager.create_connection()
 
 global room_service # Room Service instance
@@ -129,19 +132,25 @@ async def register(data: AuthRequest):
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
     hashed = pwd_context.hash(data.password)
+    
     db_manager.execute_query("INSERT INTO users (username, password) VALUES (?, ?)", (data.username, hashed))
     return {"message": "User created"}
-
 
 # Login route: verify password and return JWT
 @app.post("/login", response_model=TokenResponse)
 async def login(data: AuthRequest):
-    users = db_manager.fetch_all("SELECT * FROM users WHERE username = ?", (data.username,))
+    users = db_manager.fetch_all("SELECT id, username, password FROM users WHERE username = ?", (data.username,))
     if not users:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    
     user = users[0]
-    stored_hash = user[2]  # adapt index if your schema differs
-    if not pwd_context.verify(data.password, stored_hash):
+    user_id = user[0]     # id
+    username = user[1]    # username  
+    stored_hash = user[2] # password
+
+    # Verify the password
+    password_valid = pwd_context.verify(data.password, stored_hash)
+    if not password_valid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

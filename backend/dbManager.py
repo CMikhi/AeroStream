@@ -8,6 +8,7 @@ class DatabaseManager:
     def __init__(self, db_file: str):
         """Initialize with an absolute path to the database file (no persistent connection)."""
         self.db_file = os.path.abspath(db_file)
+        self._tables_created = False
 
     def _connect(self) -> sqlite3.Connection:
         """
@@ -26,6 +27,7 @@ class DatabaseManager:
         """
         Create the DB file if it doesn't exist and verify we can open it.
         This does NOT keep a long-lived connection.
+        Also creates required tables if they don't exist.
         """
         try:
             created = not os.path.exists(self.db_file)
@@ -34,17 +36,61 @@ class DatabaseManager:
             if created:
                 print(f"Created new database file: {self.db_file}")
             print(f"Connection to SQLite DB '{self.db_file}' successful.")
+            
+            # Create tables after successful connection
+            if not self._tables_created:
+                self._create_tables()
+                self._tables_created = True
         except Error as e:
             print(f"Error connecting to database: {e}")
 
-    def create_table(self, create_table_sql: str):
+    def _create_tables(self):
+        """Create the required tables for the chat application."""
+        # Create tables for users, rooms, and messages
+        create_users_table = """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL
+        );
+        """
+
+        create_rooms_table = """
+        CREATE TABLE IF NOT EXISTS rooms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_key TEXT NOT NULL UNIQUE,
+            created_by INTEGER,
+            FOREIGN KEY (created_by) REFERENCES users (id)
+        );
+        """
+
+        create_messages_table = """
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            room_id INTEGER,
+            content TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (room_id) REFERENCES rooms (id)
+        );
+        """
+
+        print("Creating database tables...")
+        self.create_table(create_users_table, silent=True)
+        self.create_table(create_rooms_table, silent=True)
+        self.create_table(create_messages_table, silent=True)
+        print("Database tables created successfully.")
+
+    def create_table(self, create_table_sql: str, silent: bool = False):
         """Create a table using the provided SQL statement (safe per-op connection)."""
         try:
             with self._connect() as conn:
                 cur = conn.cursor()
                 cur.execute(create_table_sql)
                 # conn.commit() happens automatically on context manager exit if no exception
-                print("Table created successfully.")
+                if not silent:
+                    print("Table created successfully.")
         except Error as e:
             print(f"Error creating table: {e}")
 
