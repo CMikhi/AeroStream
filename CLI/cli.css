@@ -1,0 +1,10 @@
+#sidebar {
+    width: 20%;       /* narrow strip on left */
+    background: blue;
+    color: white;
+}
+
+#main {
+    background: black;
+    color: green;
+}
