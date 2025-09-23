@@ -11,7 +11,7 @@ from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 
 # Local imports
-from .ws_manager import manager
+from .ws_manager import manager, ConnectionRefusedError
 from .roomService import RoomService
 from .messageService import MessageService
 '''
@@ -201,6 +201,21 @@ async def get_network_info():
         "note": "Use the local_ip URL from other devices on the same network"
     }
 
+@app.get("/room-status/{room_name}")
+async def get_room_status(room_name: str, current_user: dict = Depends(get_current_user)):
+    """Get status of a room including connected users"""
+    if not room_service.room_exists(room_name):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    
+    connected_users = manager.get_room_users(room_name)
+    
+    return {
+        "room_name": room_name,
+        "connected_users": connected_users,
+        "connection_count": len(connected_users),
+        "exists": True
+    }
+
 # this is how we create new users
 # First we check if the password is long enough, we make sure the username is not taken, and then hash the password before storing
 @app.post("/register", status_code=status.HTTP_201_CREATED)
@@ -347,8 +362,16 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
             await websocket.close()
             return
         
-        # Add connection to room
-        await manager.connect(room_name, websocket)
+        # Add connection to room - handle duplicate connections
+        try:
+            await manager.connect(room_name, user, websocket)
+        except ConnectionRefusedError as e:
+            await websocket.send_json({
+                "type": "error", 
+                "message": f"Connection refused: {str(e)}"
+            })
+            await websocket.close()
+            return
         
         # Send authentication success and initial room data
         await websocket.send_json({
@@ -386,12 +409,12 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
         while True:
             try:
                 data = await websocket.receive_json()
-                print(f"Received WebSocket message: {data}")
+                print(f"Received WebSocket message from {user['username']}: {data}")
                 
                 if data.get("type") == "send_message":
                     message_content = data.get("message", "").strip()
                     if message_content:
-                        print(f"Processing message: {message_content}")
+                        print(f"Processing message from {user['username']}: {message_content}")
                         # Save message to database
                         result = message_service.send_message(user["id"], room_id, message_content)
                         print(f"Message save result: {result}")
@@ -401,13 +424,13 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
                             recent_messages = message_service.get_room_messages(room_id, limit=1)
                             if recent_messages["success"] and recent_messages["messages"]:
                                 latest_message = recent_messages["messages"][-1]
-                                print(f"Broadcasting message: {latest_message}")
+                                print(f"Broadcasting message from {user['username']}: {latest_message}")
                                 # Broadcast to all clients in the room EXCEPT the sender
                                 try:
                                     await manager.broadcast(room_name, {
                                         "type": "new_message",
                                         "data": latest_message
-                                    }, exclude_socket=websocket)
+                                    }, exclude_user=user["username"])
                                     print("Message broadcast successful")
                                     
                                     # Send confirmation back to sender only

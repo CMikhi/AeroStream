@@ -280,11 +280,14 @@
 
                 // If join was successful, proceed with WebSocket connection
                 addMessage('system', 'Room access granted, connecting...');
+                document.getElementById('status').className = 'status disconnected';
+                document.getElementById('status').textContent = 'Connecting...';
 
                 ws = new WebSocket(`${wsBaseUrl}/ws/${roomName}`);
                 
                 ws.onopen = function() {
                     console.log('WebSocket opened');
+                    document.getElementById('status').textContent = 'Authenticating...';
                     // Send authentication
                     ws.send(JSON.stringify({
                         type: 'auth',
@@ -383,8 +386,39 @@
                         }
                         break;
 
+                    case 'connection_replaced':
+                        addMessage('system', `Connection replaced: ${data.message || 'Your connection was replaced by a new one'}`);
+                        // Close current connection gracefully
+                        if (ws) {
+                            ws.close();
+                            ws = null;
+                        }
+                        document.getElementById('status').className = 'status disconnected';
+                        document.getElementById('status').textContent = 'Disconnected (Connection Replaced)';
+                        break;
+
+                    case 'force_disconnect':
+                        addMessage('system', `Forced disconnect: ${data.message || 'Disconnected by server'}`);
+                        // Close current connection gracefully
+                        if (ws) {
+                            ws.close();
+                            ws = null;
+                        }
+                        document.getElementById('status').className = 'status disconnected';
+                        document.getElementById('status').textContent = 'Disconnected (Forced)';
+                        break;
+
                     case 'error':
-                        addMessage('system', `Error: ${data.message || 'Unknown error'}`);
+                        const errorMessage = data.message || 'Unknown error';
+                        addMessage('system', `Error: ${errorMessage}`);
+                        
+                        // Handle specific error types
+                        if (errorMessage.includes('Connection refused') || errorMessage.includes('already connected')) {
+                            addMessage('system', 'You are already connected to this room from another tab or device.');
+                            // Don't try to reconnect automatically for this type of error
+                            document.getElementById('status').className = 'status disconnected';
+                            document.getElementById('status').textContent = 'Connection Refused (Already Connected)';
+                        }
                         break;
 
                     case 'pong':
