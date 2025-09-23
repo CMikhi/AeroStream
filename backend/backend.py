@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from .roomService import RoomService
 from .messageService import MessageService
@@ -29,10 +30,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],  # Explicitly list all methods
     allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],  # Expose all headers
 )
-
+ 
 # JWT config
 
 # You don;t need a .env, this isn't prod and is simply just for fun
@@ -155,6 +157,42 @@ async def authenticate_websocket_token(token: str):
 @app.get("/")
 async def root():
     return {"message": "Hello, FastAPI is working!"}
+
+@app.options("/{full_path:path}")
+async def options_handler():
+    """Handle preflight OPTIONS requests for CORS"""
+    return {"message": "OK"}
+
+@app.get("/test")
+async def serve_test_page():
+    """Serve the WebSocket test HTML page"""
+    html_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "websocket_test.html")
+    return FileResponse(html_path)
+
+@app.get("/network-info")
+async def get_network_info():
+    """Get network information for accessing the server from other devices"""
+    import socket
+    hostname = socket.gethostname()
+    try:
+        # Get local IP address
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        local_ip = "Unable to determine"
+    
+    return {
+        "hostname": hostname,
+        "local_ip": local_ip,
+        "access_urls": [
+            f"http://localhost:8000/test",
+            f"http://127.0.0.1:8000/test",
+            f"http://{local_ip}:8000/test"
+        ],
+        "note": "Use the local_ip URL from other devices on the same network"
+    }
 
 # this is how we create new users
 # First we check if the password is long enough, we make sure the username is not taken, and then hash the password before storing
@@ -322,60 +360,97 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
             })
         
         # Notify room that user joined
-        await manager.broadcast(room_name, {
-            "type": "user_joined",
-            "data": {
-                "username": user["username"],
-                "message": f"{user['username']} joined the room"
-            }
-        })
+        try:
+            await manager.broadcast(room_name, {
+                "type": "user_joined",
+                "data": {
+                    "username": user["username"],
+                    "message": f"{user['username']} joined the room"
+                }
+            })
+        except Exception as e:
+            print(f"Error broadcasting user joined: {e}")
         
         # Listen for messages from client
         while True:
             try:
                 data = await websocket.receive_json()
+                print(f"Received WebSocket message: {data}")
                 
                 if data.get("type") == "send_message":
                     message_content = data.get("message", "").strip()
                     if message_content:
+                        print(f"Processing message: {message_content}")
                         # Save message to database
                         result = message_service.send_message(user["id"], room_id, message_content)
+                        print(f"Message save result: {result}")
+                        
                         if result["success"]:
                             # Get the saved message to broadcast
                             recent_messages = message_service.get_room_messages(room_id, limit=1)
                             if recent_messages["success"] and recent_messages["messages"]:
                                 latest_message = recent_messages["messages"][-1]
-                                # Broadcast to all clients in the room
-                                await manager.broadcast(room_name, {
-                                    "type": "new_message",
-                                    "data": latest_message
-                                })
+                                print(f"Broadcasting message: {latest_message}")
+                                # Broadcast to all clients in the room EXCEPT the sender
+                                try:
+                                    await manager.broadcast(room_name, {
+                                        "type": "new_message",
+                                        "data": latest_message
+                                    }, exclude_socket=websocket)
+                                    print("Message broadcast successful")
+                                    
+                                    # Send confirmation back to sender only
+                                    await websocket.send_json({
+                                        "type": "message_sent",
+                                        "data": latest_message
+                                    })
+                                    print("Message confirmation sent to sender")
+                                except Exception as e:
+                                    print(f"Error broadcasting message: {e}")
                         else:
-                            await websocket.send_json({
-                                "type": "error",
-                                "message": "Failed to send message"
-                            })
+                            print(f"Failed to save message: {result}")
+                            try:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "Failed to send message"
+                                })
+                            except Exception as e:
+                                print(f"Error sending error message to client: {e}")
                 
                 elif data.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
+                    try:
+                        await websocket.send_json({"type": "pong"})
+                    except Exception as e:
+                        print(f"Error sending pong response: {e}")
+                        break
                     
+            except WebSocketDisconnect:
+                print("WebSocket disconnected by client")
+                break
             except Exception as e:
                 print(f"Error processing WebSocket message: {e}")
+                import traceback
+                traceback.print_exc()
                 break
                 
     except WebSocketDisconnect:
-        pass
+        print("WebSocket disconnected by client")
     except Exception as e:
         print(f"WebSocket error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         # Clean up connection
         if user:
-            await manager.disconnect(room_name, websocket)
-            # Notify room that user left
-            await manager.broadcast(room_name, {
-                "type": "user_left",
-                "data": {
-                    "username": user["username"],
-                    "message": f"{user['username']} left the room"
-                }
-            })
+            try:
+                await manager.disconnect(room_name, websocket)
+                # Notify room that user left
+                await manager.broadcast(room_name, {
+                    "type": "user_left",
+                    "data": {
+                        "username": user["username"],
+                        "message": f"{user['username']} left the room"
+                    }
+                })
+            except Exception as e:
+                print(f"Error during cleanup: {e}")
