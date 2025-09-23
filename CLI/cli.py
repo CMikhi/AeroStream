@@ -42,6 +42,7 @@ class TextApp(App):
 
         # Horizontal container: sidebar + main column
         yield Horizontal(
+
             self.sidebar,
             self.main_column,
         )
@@ -52,7 +53,8 @@ class TextApp(App):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         input_id = getattr(event.input, "id", None)
         value = event.value.strip()
-
+        
+        
         # Username input submitted
         if input_id == "username_input":
             if value:
