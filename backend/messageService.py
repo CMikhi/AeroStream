@@ -54,23 +54,25 @@ class MessageService:
             """
             
             if limit:
-                # If limit is specified, get the most recent messages but still order them chronologically
-                query = f"""
-                    SELECT * FROM (
-                        SELECT 
-                            m.id,
-                            m.content,
-                            m.timestamp,
-                            m.user_id,
-                            u.username
-                        FROM messages m
-                        JOIN users u ON m.user_id = u.id
-                        WHERE m.room_id = ?
-                        ORDER BY m.timestamp DESC
-                        LIMIT ?
-                    ) ORDER BY timestamp ASC
+                # Efficiently get the most recent messages in chronological order using LIMIT and OFFSET
+                count_query = "SELECT COUNT(*) FROM messages WHERE room_id = ?"
+                count_result = self.db_manager.fetch_one(count_query, (room_id,))
+                total_count = count_result[0] if count_result else 0
+                offset = max(total_count - limit, 0)
+                query = """
+                    SELECT 
+                        m.id,
+                        m.content,
+                        m.timestamp,
+                        m.user_id,
+                        u.username
+                    FROM messages m
+                    JOIN users u ON m.user_id = u.id
+                    WHERE m.room_id = ?
+                    ORDER BY m.timestamp ASC
+                    LIMIT ? OFFSET ?
                 """
-                params = (room_id, limit)
+                params = (room_id, limit, offset)
             else:
                 params = (room_id,)
             
