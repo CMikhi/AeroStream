@@ -355,6 +355,10 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
         
         # Send recent messages
         room_id = room_service.get_room_id(room_name)
+        if not room_id:
+            await websocket.send_json({"type": "error", "message": "Room not found"})
+            await websocket.close()
+            return
         messages = message_service.get_room_messages(room_id, limit=50)  # Send last 50 messages
         if messages["success"]:
             await websocket.send_json({
