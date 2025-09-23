@@ -23,7 +23,7 @@ app = FastAPI()
 # JWT config
 
 # You don;t need a .env, this isn't prod and is simply just for fun
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = "SUPERSECRETKEY12345!"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
