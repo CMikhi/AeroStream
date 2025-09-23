@@ -221,8 +221,8 @@ async def get_messages_with_limit(room_name: str, limit: int, current_user: dict
 
 @app.get("/messages/count/{room_id}")
 async def get_message_count(room_id: int, current_user: dict = Depends(get_current_user)):
+    room = room_service.get_room_by_id(room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     result = message_service.get_message_count(room_id)
-    if result > 0:
-        return {"room_id": room_id, "message_count": result}
-    else:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found or no messages available")
+    return {"room_id": room_id, "message_count": result}
