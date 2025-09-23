@@ -4,6 +4,8 @@ from sqlite3 import Error
 import os
 from typing import List, Tuple, Any, Optional
 
+__all__ = ['DatabaseManager']
+
 class DatabaseManager:
     def __init__(self, db_file: str):
         """Initialize with an absolute path to the database file (no persistent connection)."""
@@ -129,6 +131,21 @@ class DatabaseManager:
             print(f"Error fetching data: {e}")
             return []
 
+    def fetch_one(self, query: str, params: Optional[Tuple[Any, ...]] = None) -> Optional[sqlite3.Row]:
+        """Fetch one row for a given query and return sqlite3.Row or None if no results."""
+        try:
+            with self._connect() as conn:
+                cur = conn.cursor()
+                if params:
+                    cur.execute(query, params)
+                else:
+                    cur.execute(query)
+                row = cur.fetchone()
+                return row
+        except Error as e:
+            print(f"Error fetching data: {e}")
+            return None
+
     def close_connection(self):
         """
         Kept for API parity; nothing to close because we open per-operation connections.
@@ -138,48 +155,11 @@ class DatabaseManager:
 
 # Example usage (keep as script for initial DB creation)
 if __name__ == "__main__":
-    # WARNING: THIS WILL RESET the DB file creation step below if you truncate it.
-    # Create (or truncate) a db file for demonstration
-    with open("database.db", "wb"):
-        pass
-
+    # Create a demo database file for testing
     db_manager = DatabaseManager("database.db")
     db_manager.create_connection()
 
-    # Create tables for users, rooms, and messages
-    create_users_table = """
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL UNIQUE,
-        password TEXT NOT NULL
-    );
-    """
-
-    create_rooms_table = """
-    CREATE TABLE IF NOT EXISTS rooms (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        room_key TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        created_by INTEGER,
-        FOREIGN KEY (created_by) REFERENCES users (id)
-    );
-    """
-
-    create_messages_table = """
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        room_id INTEGER,
-        content TEXT NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES users (id),
-        FOREIGN KEY (room_id) REFERENCES rooms (id)
-    );
-    """
-
-    db_manager.create_table(create_users_table)
-    db_manager.create_table(create_rooms_table)
-    db_manager.create_table(create_messages_table)
-
+    # Insert demo data
     db_manager.execute_query("INSERT INTO users (username, password) VALUES (?, ?)", ("John Doe", "password123"))
     users = db_manager.fetch_all("SELECT * FROM users")
     # convert sqlite3.Row objects to tuples or dicts for printing

@@ -1,6 +1,9 @@
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
+__all__ = ['MessageService']
+
+
 class MessageService:
     def __init__(self, db_manager):
         self.db_manager = db_manager

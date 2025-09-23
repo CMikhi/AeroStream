@@ -1,4 +1,9 @@
-# decode_token_debug.py
+#!/usr/bin/env python3
+"""
+Debug script for decoding JWT tokens.
+Usage: python script.py <token>
+"""
+
 from jose import jwt, JWTError
 import sys, os
 

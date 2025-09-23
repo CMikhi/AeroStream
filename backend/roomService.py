@@ -1,13 +1,18 @@
+from typing import Dict, Any, Optional
+
+__all__ = ['RoomService']
+
+
 class RoomService:
     def __init__(self, db_manager):
         self.db_manager = db_manager
 
-    def room_exists(self, room_name):
+    def room_exists(self, room_name: str) -> bool:
         """Check if a room exists by room_key."""
         rooms = self.db_manager.fetch_all("SELECT id FROM rooms WHERE room_key = ?", (room_name,))
         return len(rooms) > 0
 
-    def create_room(self, room_name, created_by_user_id):
+    def create_room(self, room_name: str, created_by_user_id: int) -> Dict[str, Any]:
         """Creates a new chat room."""
         if self.room_exists(room_name):
             return {"success": False, "message": f"Room '{room_name}' already exists."}
@@ -19,7 +24,7 @@ class RoomService:
         except Exception as e:
             return {"success": False, "message": f"Failed to create room: {str(e)}"}
 
-    def delete_room(self, room_name):
+    def delete_room(self, room_name: str) -> Dict[str, Any]:
         """Deletes an existing chat room."""
         if not self.room_exists(room_name):
             return {"success": False, "message": f"Room '{room_name}' does not exist."}
@@ -30,13 +35,13 @@ class RoomService:
         except Exception as e:
             return {"success": False, "message": f"Failed to delete room: {str(e)}"}
 
-    def join_room(self, room_name):
+    def join_room(self, room_name: str) -> Dict[str, Any]:
         """Check if a user can join a room (room exists)."""
         if not self.room_exists(room_name):
             return {"success": False, "message": f"Room '{room_name}' does not exist."}
         return {"success": True, "message": f"Successfully joined room '{room_name}'."}
 
-    def list_rooms(self):
+    def list_rooms(self) -> Dict[str, Any]:
         """Lists all chat rooms."""
         try:
             rooms = self.db_manager.fetch_all("SELECT room_key FROM rooms")
@@ -44,7 +49,7 @@ class RoomService:
         except Exception as e:
             return {"success": False, "message": f"Failed to fetch rooms: {str(e)}"}
 
-    def get_room_id(self, room_name):
+    def get_room_id(self, room_name: str) -> Optional[int]:
         """Get the room ID by room name."""
         rooms = self.db_manager.fetch_all("SELECT id FROM rooms WHERE room_key = ?", (room_name,))
         return rooms[0][0] if rooms else None

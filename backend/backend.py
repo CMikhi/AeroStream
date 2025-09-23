@@ -14,17 +14,19 @@ API for chat TUI using FastAPI, JWT, and SQLite
 2. FastAPI app handles HTTP requests and responses.
 3. RoomService manages chat rooms and their participants.
 4. LoginService manages user authentication and JWT issuance.
-    * Passwords are hashed using bcrypt via passlib.
+   * Passwords are hashed using bcrypt via passlib.
 5. Responses are sent using JSON with status codes and messages.
 '''
 
-# app
-app = FastAPI()
+# FastAPI app instance
+app = FastAPI(title="IgniteDemo Chat API", version="1.0.0")
 
 # JWT config
-
-# You don;t need a .env, this isn't prod and is simply just for fun
-SECRET_KEY = "SUPERSECRETKEY12345!"
+# For production, set SECRET_KEY environment variable
+SECRET_KEY = os.getenv("SECRET_KEY", "SUPERSECRETKEY12345!")  # Default for development only
+if SECRET_KEY == "SUPERSECRETKEY12345!" and os.getenv("ENVIRONMENT") == "production":
+    raise ValueError("SECRET_KEY must be set in production environment")
+    
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -42,10 +44,8 @@ db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "database.db"
 db_manager = dbManager.DatabaseManager(db_path)
 db_manager.create_connection()
 
-global room_service # Room Service instance
+# Service instances
 room_service = RoomService(db_manager)
-
-global message_service # Message Service instance
 message_service = MessageService(db_manager)
 
 
@@ -221,8 +221,9 @@ async def get_messages_with_limit(room_name: str, limit: int, current_user: dict
 
 @app.get("/messages/count/{room_id}")
 async def get_message_count(room_id: int, current_user: dict = Depends(get_current_user)):
-    room = room_service.get_room_id(room_id)
-    if not room:
+    # Verify room exists by checking if there's a room with this ID
+    room_check = db_manager.fetch_all("SELECT id FROM rooms WHERE id = ?", (room_id,))
+    if not room_check:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     result = message_service.get_message_count(room_id)
     return {"room_id": room_id, "message_count": result}

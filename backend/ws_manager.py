@@ -2,6 +2,8 @@ import asyncio
 from typing import Dict, Set, Any
 from fastapi import WebSocket
 
+__all__ = ['ConnectionManager', 'manager']
+
 class ConnectionManager:
     def __init__(self):
         self.active_rooms: Dict[str, Set[WebSocket]] = {}

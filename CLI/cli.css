@@ -1,0 +1,47 @@
+#sidebar {
+    width: 25%;
+    background: $surface;
+    border: thick $primary;
+    padding: 1;
+}
+
+.sidebar-title {
+    text-style: bold;
+    color: $primary;
+    margin: 1 0;
+}
+
+.room-item {
+    color: $text;
+    margin: 0 1;
+}
+
+.room-item:hover {
+    background: $primary-lighten-1;
+    color: $background;
+}
+
+#main {
+    background: $background;
+    border: thick $secondary;
+    padding: 1;
+}
+
+#chat-display {
+    height: 80%;
+    border: solid $surface;
+    margin: 1 0;
+    padding: 1;
+}
+
+#message-input {
+    dock: bottom;
+    height: 3;
+}
+
+#welcome {
+    text-align: center;
+    text-style: bold;
+    color: $success;
+    margin: 1 0;
+}
