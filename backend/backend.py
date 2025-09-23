@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocke
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
 from .roomService import RoomService
 from .messageService import MessageService
 from .ws_manager import manager
@@ -14,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 '''
 API for chat TUI using FastAPI, JWT, and SQLite
 
+
 1. dbManager is a database management utility that simplifies interactions with SQLite.
 2. FastAPI app handles HTTP requests and responses.
 3. RoomService manages chat rooms and their participants.
@@ -24,6 +26,7 @@ API for chat TUI using FastAPI, JWT, and SQLite
 
 # app
 app = FastAPI()
+
 
 # Add CORS middleware to allow all origins
 app.add_middleware(
