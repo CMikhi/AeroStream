@@ -69,11 +69,15 @@
     <div class="container">
         <h3>Authentication</h3>
         <form onsubmit="return false;">
-            <input type="text" id="username" placeholder="Username" value="testuser">
-            <input type="password" id="password" placeholder="Password" value="testpass">
+            <input type="text" id="username" placeholder="Enter username">
+            <input type="password" id="password" placeholder="Enter password">
             <button type="button" onclick="login()">Login</button>
+            <button type="button" onclick="register()" style="background-color: #28a745; color: white;">Register</button>
             <button type="button" onclick="logout()" style="background-color: #dc3545; color: white;">Logout</button>
         </form>
+        <div style="margin-top: 10px; font-size: 14px; color: #666;">
+            <em>New user? Click "Register" to create an account, then "Login" to access the chat.</em>
+        </div>
         <div id="token" style="margin-top: 10px; word-break: break-all;"></div>
     </div>
 
@@ -149,6 +153,11 @@
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             
+            if (!username || !password) {
+                addMessage('system', 'Please enter both username and password');
+                return;
+            }
+            
             try {
                 const response = await fetch(`${baseUrl}/login`, {
                     method: 'POST',
@@ -171,6 +180,37 @@
                 }
             } catch (error) {
                 addMessage('system', `Login error: ${error.message}`);
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                addMessage('system', 'Please enter both username and password');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${baseUrl}/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addMessage('system', 'Registration successful! You can now login.');
+                } else {
+                    const error = await response.json();
+                    addMessage('system', `Registration failed: ${error.detail}`);
+                }
+            } catch (error) {
+                addMessage('system', `Registration error: ${error.message}`);
             }
         }
 
