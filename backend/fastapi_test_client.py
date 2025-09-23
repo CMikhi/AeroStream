@@ -44,7 +44,7 @@ def pretty_print_response(resp: requests.Response) -> bool:
         print(json.dumps(data, indent=2))
     except ValueError:
         print(resp.text)
-    return 200 <= resp.status_code < 300
+    return resp.status_code == 200 or resp.status_code == 201
 
 def run_test(description: str, func, *args, **kwargs):
     print(f"\nRunning test: {description}")
