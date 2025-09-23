@@ -29,6 +29,7 @@ IgniteDemoRepo/
 │   ├── messageService.py   # Message handling logic
 │   ├── roomService.py      # Room management logic
 │   ├── ws_manager.py       # WebSocket connection management
+│   ├── validation.py       # Input validation utilities
 │   ├── script.py           # JWT debugging utility
 │   └── fastapi_test_client.py  # API testing client
 ├── CLI/                    # Terminal User Interface

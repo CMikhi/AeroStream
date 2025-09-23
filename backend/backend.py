@@ -3,10 +3,19 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from .roomService import RoomService
 from .messageService import MessageService
+from .validation import validate_username, validate_room_name, validate_message
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 import os
+import logging
 from passlib.context import CryptContext
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 '''
 API for chat TUI using FastAPI, JWT, and SQLite
 
@@ -21,8 +30,7 @@ API for chat TUI using FastAPI, JWT, and SQLite
 # FastAPI app instance
 app = FastAPI(title="IgniteDemo Chat API", version="1.0.0")
 
-# JWT config
-# For production, set SECRET_KEY environment variable
+# Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "SUPERSECRETKEY12345!")  # Default for development only
 if SECRET_KEY == "SUPERSECRETKEY12345!" and os.getenv("ENVIRONMENT") == "production":
     raise ValueError("SECRET_KEY must be set in production environment")
@@ -30,10 +38,8 @@ if SECRET_KEY == "SUPERSECRETKEY12345!" and os.getenv("ENVIRONMENT") == "product
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Security
+# Security instances
 security = HTTPBearer()
-
-# Password hashing context (recommended)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Database manager (your module)
@@ -129,6 +135,11 @@ async def root():
 # First we check if the password is long enough, we make sure the username is not taken, and then hash the password before storing
 @app.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(data: AuthRequest):
+    # Validate input
+    username_error = validate_username(data.username)
+    if username_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=username_error)
+        
     if len(data.password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters long")
     # check username exists
@@ -138,6 +149,7 @@ async def register(data: AuthRequest):
     hashed = pwd_context.hash(data.password)
     
     db_manager.execute_query("INSERT INTO users (username, password) VALUES (?, ?)", (data.username, hashed))
+    logger.info(f"New user registered: {data.username}")
     return {"message": "User created"}
 
 # Login route: verify password and return JWT
@@ -173,8 +185,14 @@ async def join_room(data: RoomRequest, current_user: dict = Depends(get_current_
 # Route to create a room, takes in a room name and a user then creates the room
 @app.post("/create_room")
 async def create_room(data: RoomRequest, current_user: dict = Depends(get_current_user)):
+    # Validate room name
+    room_error = validate_room_name(data.room_name)
+    if room_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=room_error)
+        
     result = room_service.create_room(data.room_name, current_user["id"])
     if result["success"]:
+        logger.info(f"Room '{data.room_name}' created by user {current_user['username']}")
         return {"message": result["message"]}
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["message"])
@@ -184,12 +202,18 @@ async def create_room(data: RoomRequest, current_user: dict = Depends(get_curren
 # Takes a room name and message, checks if the room exists, then stores the message with the user and room ids
 @app.post("/send_message")
 async def send_message(data: MessageRequest, current_user: dict = Depends(get_current_user)):
+    # Validate message content
+    message_error = validate_message(data.message)
+    if message_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message_error)
+    
     room_id = room_service.get_room_id(data.room_name)
     if not room_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     
     result = message_service.send_message(current_user["id"], room_id, data.message)
     if result["success"]:
+        logger.info(f"Message sent by {current_user['username']} to room '{data.room_name}'")
         return {"message": result["message"]}
     else:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result["message"])

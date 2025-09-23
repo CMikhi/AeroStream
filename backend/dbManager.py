@@ -2,9 +2,13 @@
 import sqlite3
 from sqlite3 import Error
 import os
+import logging
 from typing import List, Tuple, Any, Optional
 
 __all__ = ['DatabaseManager']
+
+# Configure logging for database operations
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self, db_file: str):
@@ -36,15 +40,16 @@ class DatabaseManager:
             conn = self._connect()
             conn.close()
             if created:
-                print(f"Created new database file: {self.db_file}")
-            print(f"Connection to SQLite DB '{self.db_file}' successful.")
+                logger.info(f"Created new database file: {self.db_file}")
+            logger.info(f"Connection to SQLite DB '{self.db_file}' successful.")
             
             # Create tables after successful connection
             if not self._tables_created:
                 self._create_tables()
                 self._tables_created = True
         except Error as e:
-            print(f"Error connecting to database: {e}")
+            logger.error(f"Error connecting to database: {e}")
+            raise
 
     def _create_tables(self):
         """Create the required tables for the chat application."""
@@ -78,11 +83,11 @@ class DatabaseManager:
         );
         """
 
-        print("Creating database tables...")
+        logger.info("Creating database tables...")
         self.create_table(create_users_table, silent=True)
         self.create_table(create_rooms_table, silent=True)
         self.create_table(create_messages_table, silent=True)
-        print("Database tables created successfully.")
+        logger.info("Database tables created successfully.")
 
     def create_table(self, create_table_sql: str, silent: bool = False):
         """Create a table using the provided SQL statement (safe per-op connection)."""
@@ -92,9 +97,10 @@ class DatabaseManager:
                 cur.execute(create_table_sql)
                 # conn.commit() happens automatically on context manager exit if no exception
                 if not silent:
-                    print("Table created successfully.")
+                    logger.info("Table created successfully.")
         except Error as e:
-            print(f"Error creating table: {e}")
+            logger.error(f"Error creating table: {e}")
+            raise
 
     def execute_query(self, query: str, params: Optional[Tuple[Any, ...]] = None):
         """Execute a query with optional parameters in a fresh connection."""
@@ -106,9 +112,10 @@ class DatabaseManager:
                 else:
                     cur.execute(query)
                 # commit on context exit
-                print("Query executed successfully.")
+                logger.debug("Query executed successfully.")
         except Error as e:
-            print(f"Error executing query: {e}")
+            logger.error(f"Error executing query: {e}")
+            raise
 
     def push_data(self, table: str, data: Tuple[Any, ...]):
         """Insert data into a specified table. 'data' should be a tuple of values matching table columns."""
@@ -128,7 +135,7 @@ class DatabaseManager:
                 rows = cur.fetchall()
                 return rows
         except Error as e:
-            print(f"Error fetching data: {e}")
+            logger.error(f"Error fetching data: {e}")
             return []
 
     def fetch_one(self, query: str, params: Optional[Tuple[Any, ...]] = None) -> Optional[sqlite3.Row]:
@@ -143,7 +150,7 @@ class DatabaseManager:
                 row = cur.fetchone()
                 return row
         except Error as e:
-            print(f"Error fetching data: {e}")
+            logger.error(f"Error fetching data: {e}")
             return None
 
     def close_connection(self):
@@ -151,7 +158,7 @@ class DatabaseManager:
         Kept for API parity; nothing to close because we open per-operation connections.
         This is a no-op but left to avoid breaking code that calls it.
         """
-        print("DatabaseManager uses per-operation connections; nothing to close.")
+        logger.debug("DatabaseManager uses per-operation connections; nothing to close.")
 
 # Example usage (keep as script for initial DB creation)
 if __name__ == "__main__":
