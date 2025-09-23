@@ -38,13 +38,14 @@ IgniteDemoRepo is a terminal-based messaging application built for the **Ignite 
 
 4. **Start the TUI frontend:**
    ```bash
-   python cli/main.py
+   python cli/cli.py
    ```
 
 ## Usage
 
 - Launch the backend server, then open the TUI client in your terminal.
-- Log in or register (if authentication is implemented).
+- Log in or register
+- Create a new room or join a new one
 - Start messaging in real-time with other users.
 
 ## Contributing
@@ -57,7 +58,7 @@ This project is licensed under the MIT License.
 
 ## Acknowledgments
 
-- [Ignite Professional Studies Technology](https://www.igniteyourfuture.org/)
+- [Ignite Professional Studies](https://www.bentonvillek12.org/o/ignite)
 - [Textualize](https://github.com/Textualize/textual)
 - [FastAPI](https://fastapi.tiangolo.com/)
 
