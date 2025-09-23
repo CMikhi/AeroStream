@@ -30,7 +30,7 @@ def make_headers(token: Optional[str] = None):
         h["Authorization"] = f"Bearer {token}"
     return h
 
-def post(url: str, path: str, json_body: dict = None, token: Optional[str] = None) -> requests.Response:
+def post(url: str, path: str, json_body: Optional[dict] = None, token: Optional[str] = None) -> requests.Response:
     full = url.rstrip("/") + "/" + path.lstrip("/")
     return requests.post(full, json=json_body, headers=make_headers(token))
 
