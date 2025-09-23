@@ -81,15 +81,36 @@
         <h3>Room Management</h3>
         <form onsubmit="return false;">
             <input type="text" id="newRoomName" placeholder="New room name">
+            <select id="roomType" style="padding: 10px;" onchange="togglePasswordInput()">
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+            </select>
+            <input type="password" id="roomPassword" placeholder="Room password" style="display: none; margin-top: 10px;">
             <button type="button" onclick="createRoom()">Create Room</button>
         </form>
         <div id="roomStatus" style="margin-top: 10px;"></div>
     </div>
 
+    <script>
+        function togglePasswordInput() {
+            const roomType = document.getElementById('roomType').value;
+            const passwordInput = document.getElementById('roomPassword');
+            if (roomType === 'private') {
+                passwordInput.style.display = 'block';
+            } else {
+                passwordInput.style.display = 'none';
+            }
+        }
+    </script>
+
     <div class="container">
         <h3>WebSocket Connection</h3>
         <form onsubmit="return false;">
             <input type="text" id="roomName" placeholder="Room name" value="general">
+            <input type="password" id="joinRoomPassword" placeholder="Password (for private rooms)" style="margin-top: 5px;">
+            <div style="font-size: 12px; color: #666; margin: 5px 0;">
+                Leave password empty for public rooms. Enter password for private rooms.
+            </div>
             <button type="button" onclick="connect()">Connect to Room</button>
             <button type="button" onclick="disconnect()">Disconnect</button>
         </form>
@@ -176,54 +197,90 @@
 
         async function createRoom() {
             if (!token) {
-                document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please login first</span>';
-                return;
+            document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please login first</span>';
+            return;
             }
 
             const roomName = document.getElementById('newRoomName').value.trim();
+            const roomType = document.getElementById('roomType').value;
+            const roomPassword = document.getElementById('roomPassword').value.trim();
+
             if (!roomName) {
-                document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please enter a room name</span>';
-                return;
+            document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please enter a room name</span>';
+            return;
+            }
+
+            const roomData = { room_name: roomName };
+            if (roomType === 'private') {
+                roomData.private = true;
+                roomData.password = roomPassword;
             }
 
             try {
-                const response = await fetch(`${baseUrl}/create_room`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ room_name: roomName })
-                });
+            const response = await fetch(`${baseUrl}/create_room`, {
+                method: 'POST',
+                headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(roomData)
+            });
 
-                if (response.ok) {
-                    const data = await response.json();
-                    document.getElementById('roomStatus').innerHTML = `<span style="color: green;">${data.message}</span>`;
-                    document.getElementById('roomName').value = roomName; // Auto-fill the connect room field
-                    document.getElementById('newRoomName').value = ''; // Clear the input
-                    addMessage('system', `Room '${roomName}' created successfully!`);
-                } else {
-                    const error = await response.json();
-                    document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Failed to create room: ${error.detail}</span>`;
-                }
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById('roomStatus').innerHTML = `<span style="color: green;">${data.message}</span>`;
+                document.getElementById('roomName').value = roomName; // Auto-fill the connect room field
+                document.getElementById('newRoomName').value = ''; // Clear the input
+                document.getElementById('roomPassword').value = ''; // Clear the password input
+                addMessage('system', `Room '${roomName}' created successfully!`);
+            } else {
+                const error = await response.json();
+                document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Failed to create room: ${error.detail}</span>`;
+            }
             } catch (error) {
-                document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Error creating room: ${error.message}</span>`;
+            document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Error creating room: ${error.message}</span>`;
             }
         }
 
-        function connect() {
+        async function connect() {
             if (!token) {
                 addMessage('system', 'Please login first');
                 return;
             }
 
             const roomName = document.getElementById('roomName').value;
+            const roomPassword = document.getElementById('joinRoomPassword').value;
+            
             if (!roomName) {
                 addMessage('system', 'Please enter a room name');
                 return;
             }
 
             try {
+                // First, attempt to join the room via API to validate password
+                const joinData = { room_name: roomName };
+                if (roomPassword) {
+                    joinData.password = roomPassword;
+                }
+
+                const joinResponse = await fetch(`${baseUrl}/join_room`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(joinData)
+                });
+
+                if (!joinResponse.ok) {
+                    const error = await joinResponse.json();
+                    addMessage('system', `Failed to join room: ${error.detail}`);
+                    return;
+                }
+
+                // If join was successful, proceed with WebSocket connection
+                addMessage('system', 'Room access granted, connecting...');
+
                 ws = new WebSocket(`${wsBaseUrl}/ws/${roomName}`);
                 
                 ws.onopen = function() {
@@ -473,7 +530,7 @@
                     login();
                 } else if (e.target.id === 'newRoomName') {
                     createRoom();
-                } else if (e.target.id === 'roomName') {
+                } else if (e.target.id === 'roomName' || e.target.id === 'joinRoomPassword') {
                     connect();
                 }
             }

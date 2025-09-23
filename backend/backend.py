@@ -80,6 +80,8 @@ class TokenResponse(BaseModel):
 
 class RoomRequest(BaseModel):
     room_name: str
+    private: Optional[bool] = False
+    password: Optional[str] = None 
 
 class MessageRequest(BaseModel):
     room_name: str
@@ -238,16 +240,16 @@ async def login(data: AuthRequest):
 # Route to join a room (checks if room exists)
 @app.post("/join_room")
 async def join_room(data: RoomRequest, current_user: dict = Depends(get_current_user)):
-    result = room_service.join_room(data.room_name)
+    result = room_service.join_room(data.room_name, data.password)
     if result["success"]:
         return {"message": result["message"]}
     else:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["message"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["message"])
 
 # Route to create a room, takes in a room name and a user then creates the room
 @app.post("/create_room")
 async def create_room(data: RoomRequest, current_user: dict = Depends(get_current_user)):
-    result = room_service.create_room(data.room_name, current_user["id"])
+    result = room_service.create_room(data, current_user["id"])
     if result["success"]:
         return {"message": result["message"]}
     else:
