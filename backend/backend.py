@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from .roomService import RoomService
+from .messageService import MessageService
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 import os
@@ -43,6 +44,9 @@ db_manager.create_connection()
 
 global room_service # Room Service instance
 room_service = RoomService(db_manager)
+
+global message_service # Message Service instance
+message_service = MessageService(db_manager)
 
 
 # Pydantic models
@@ -184,17 +188,41 @@ async def send_message(data: MessageRequest, current_user: dict = Depends(get_cu
     if not room_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     
-    db_manager.execute_query(
-        "INSERT INTO messages (user_id, room_id, content) VALUES (?, ?, ?)",
-        (current_user["id"], room_id, data.message)
-    )
-    return {"message": "Message sent successfully"}
+    result = message_service.send_message(current_user["id"], room_id, data.message)
+    if result["success"]:
+        return {"message": result["message"]}
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result["message"])
 
 @app.get("/get_messages/{room_name}")
 async def get_messages(room_name: str, current_user: dict = Depends(get_current_user)):
-    rooms = db_manager.fetch_all("SELECT id FROM rooms WHERE room_key = ?", (room_name,))
-    if not rooms:
+    result = message_service.get_room_messages_by_name(room_name)
+    if result["success"]:
+        return {
+            "messages": result["messages"],
+            "count": result["count"]
+        }
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["message"])
+
+# Route to get messages with optional limit for pagination
+@app.get("/get_messages/{room_name}/{limit}")
+async def get_messages_with_limit(room_name: str, limit: int, current_user: dict = Depends(get_current_user)):
+    result = message_service.get_room_messages_by_name(room_name, limit)
+    if result["success"]:
+        return {
+            "messages": result["messages"],
+            "count": result["count"],
+            "limited": True,
+            "limit": limit
+        }
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["message"])
+
+@app.get("/messages/count/{room_id}")
+async def get_message_count(room_id: int, current_user: dict = Depends(get_current_user)):
+    room = room_service.get_room_by_id(room_id)
+    if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    room_id = rooms[0][0]
-    messages = db_manager.fetch_all("SELECT content FROM messages WHERE room_id = ?", (room_id,))
-    return {"messages": [msg[0] for msg in messages]}
+    result = message_service.get_message_count(room_id)
+    return {"room_id": room_id, "message_count": result}
