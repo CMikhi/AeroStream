@@ -2,91 +2,77 @@ from textual.app import App, ComposeResult
 from textual.widgets import Static, Input, Header, Footer
 from textual.containers import Horizontal, Vertical
 
-class textApp(App):
+class TextApp(App):
 
     CSS_PATH = "cli.css"
-    def compose(self) -> ComposeResult:
 
+    def __init__(self):
+        super().__init__()
+        self.sidebar = None
+        self.main_content = None
+        self.chat_input = None
+        self.username_input = None
+        self.username_display = None
+        self.username = "You"
+
+    def compose(self) -> ComposeResult:
         yield Header()
-        yield Static("Hello, world!")
-        yield Input(placeholder="Type here...")
+
+        # Username input + display in the sidebar
+        self.username_input = Input(placeholder="Enter username and press Enter...", id="username_input")
+        self.username_display = Static(f"Username: {self.username}", id="username_display")
+
+        # Sidebar
+        self.sidebar = Vertical(
+            self.username_display,
+            self.username_input,
+            Static("Menu 1"),
+            Static("Menu 2"),
+            Static("Menu 3"),
+            id="sidebar"
+        )
+
+        # Main chat column with messages + input
+        self.main_content = Vertical(id="main")
+        self.chat_input = Input(placeholder="Type your message here...", id="chat_input")
+        self.main_column = Vertical(
+            self.main_content,
+            self.chat_input,
+        )
+
+        # Horizontal container: sidebar + main column
+        yield Horizontal(
+
+            self.sidebar,
+            self.main_column,
+        )
+
         yield Footer()
 
-        yield Horizontal(
-            Vertical(  # sidebar
-                Static("Chat 1"),
-                Static("Chat 2"),
-                Static("Chat 3"),
-                id="sidebar"
-            ),
-            Static("Main content here", id="main")
-        )
+    # Handle input submission
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        input_id = getattr(event.input, "id", None)
+        value = event.value.strip()
+        
+        
+        # Username input submitted
+        if input_id == "username_input":
+            if value:
+                self.username = value
+                if self.username_display:
+                    self.username_display.update(f"Username: {self.username}")
+            # Clear username input
+            event.input.value = ""
+            return
+
+        # Chat input submitted
+        if input_id == "chat_input" or input_id is None:
+            if not value:
+                return
+            # Add message to main_content using the chosen username
+            self.main_content.mount(Static(f"{self.username}: {value}"))
+            # Clear chat input
+            event.input.value = ""
+
 if __name__ == "__main__":
-    textApp().run()
-
-
-
-# Importing necessary modules
-import sys
-from textual.app import App
-from textual.widgets import Header, Footer, Button, Input, Static
-
-# Variables for username and room name (camelCase)
-userName: str = ""
-roomName: str = ""
-text: str = ""                  
-
-# Main function to start the program
-def main():
-    login()
-
-# Function to handle user login
-def login() -> None:
-    print("WELCOME!")
-    print("--------")
-    getUserName()
-    createRoom()
-
-# Function to get the username from the user
-def getUserName() -> str:
-    userName = input("Type your username: ")
-    return userName
-
-# Function to create a chat room
-def createRoom() -> None:
-    roomActive = True
-    print("ROOM")
-    print("----")
-    while roomActive:
-        roomName = input("Type your room name: ")
-        if roomName:
-            print(f"Room '{roomName}' created successfully!")
-            chatRoom()
-            roomActive = False
-        else:
-            print("Room name cannot be empty. Please try again.")
-        print(f"{userName}: {text}")
-        if text.lower() == "exit":
-            roomActive = False
-
-def chatRoom() -> None:
-    print("CHAT ROOM")
-    print("---------")
-    print(f"Welcome to the chat room, {userName}!")
-    print(f"Room Name: {roomName}")
-    print()
-    print("Type 'exit' to leave the chat room.")
-    print()
-    while True:
-        print()
-        text = input(f"{userName}: ")
-        print()
-        if text.lower() == "exit":
-            print("Exiting chat room...")
-            break
-        print(f"{userName}: {text}")
-
-# Entry point for the script
-if __name__ == "__main__":
-    main()
-
+    TextApp().run()
