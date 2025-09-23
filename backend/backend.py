@@ -1,12 +1,15 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from .roomService import RoomService
 from .messageService import MessageService
+from .ws_manager import manager
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 import os
+import json
 from passlib.context import CryptContext
+from fastapi.middleware.cors import CORSMiddleware
 '''
 API for chat TUI using FastAPI, JWT, and SQLite
 
@@ -20,6 +23,15 @@ API for chat TUI using FastAPI, JWT, and SQLite
 
 # app
 app = FastAPI()
+
+# Add CORS middleware to allow all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 # JWT config
 
@@ -36,6 +48,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Database manager (your module)
 from . import dbManager
+
 
 # Get the correct path to database.db (one level up from backend directory)
 db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "database.db")
@@ -120,6 +133,24 @@ def get_current_user(token_payload: dict = Depends(verify_token)):
     user_row = users[0]
     return {"id": user_row[0], "username": user_row[1]}
 
+# WebSocket authentication helper
+async def authenticate_websocket_token(token: str):
+    """Authenticate WebSocket connection using JWT token"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            return None
+        
+        users = db_manager.fetch_all("SELECT * FROM users WHERE username = ?", (username,))
+        if not users:
+            return None
+        
+        user_row = users[0]
+        return {"id": user_row[0], "username": user_row[1]}
+    except (JWTError, ExpiredSignatureError):
+        return None
+
 # Routes
 @app.get("/")
 async def root():
@@ -190,6 +221,17 @@ async def send_message(data: MessageRequest, current_user: dict = Depends(get_cu
     
     result = message_service.send_message(current_user["id"], room_id, data.message)
     if result["success"]:
+        # After successfully saving to database, broadcast via WebSocket
+        # Get the message details to broadcast
+        messages = message_service.get_room_messages(room_id, limit=1)
+        if messages["success"] and messages["messages"]:
+            latest_message = messages["messages"][-1]  # Get the most recent message
+            # Broadcast to all clients in the room
+            await manager.broadcast(data.room_name, {
+                "type": "new_message",
+                "data": latest_message
+            })
+        
         return {"message": result["message"]}
     else:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result["message"])
@@ -226,3 +268,114 @@ async def get_message_count(room_id: int, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
     result = message_service.get_message_count(room_id)
     return {"room_id": room_id, "message_count": result}
+
+# WebSocket endpoint for real-time messaging
+@app.websocket("/ws/{room_name}")
+async def websocket_endpoint(websocket: WebSocket, room_name: str):
+    await websocket.accept()
+    
+    user = None
+    try:
+        # Wait for authentication message
+        auth_data = await websocket.receive_json()
+        if auth_data.get("type") != "auth":
+            await websocket.send_json({"type": "error", "message": "Authentication required"})
+            await websocket.close()
+            return
+        
+        token = auth_data.get("token")
+        if not token:
+            await websocket.send_json({"type": "error", "message": "Token required"})
+            await websocket.close()
+            return
+        
+        # Authenticate user
+        user = await authenticate_websocket_token(token)
+        if not user:
+            await websocket.send_json({"type": "error", "message": "Invalid token"})
+            await websocket.close()
+            return
+        
+        # Check if room exists
+        if not room_service.room_exists(room_name):
+            await websocket.send_json({"type": "error", "message": "Room not found"})
+            await websocket.close()
+            return
+        
+        # Add connection to room
+        await manager.connect(room_name, websocket)
+        
+        # Send authentication success and initial room data
+        await websocket.send_json({
+            "type": "auth_success",
+            "user": user,
+            "room": room_name
+        })
+        
+        # Send recent messages
+        room_id = room_service.get_room_id(room_name)
+        messages = message_service.get_room_messages(room_id, limit=50)  # Send last 50 messages
+        if messages["success"]:
+            await websocket.send_json({
+                "type": "message_history",
+                "data": messages["messages"]
+            })
+        
+        # Notify room that user joined
+        await manager.broadcast(room_name, {
+            "type": "user_joined",
+            "data": {
+                "username": user["username"],
+                "message": f"{user['username']} joined the room"
+            }
+        })
+        
+        # Listen for messages from client
+        while True:
+            try:
+                data = await websocket.receive_json()
+                
+                if data.get("type") == "send_message":
+                    message_content = data.get("message", "").strip()
+                    if message_content:
+                        # Save message to database
+                        result = message_service.send_message(user["id"], room_id, message_content)
+                        if result["success"]:
+                            # Get the saved message to broadcast
+                            recent_messages = message_service.get_room_messages(room_id, limit=1)
+                            if recent_messages["success"] and recent_messages["messages"]:
+                                latest_message = recent_messages["messages"][-1]
+                                # Broadcast to all clients in the room
+                                await manager.broadcast(room_name, {
+                                    "type": "new_message",
+                                    "data": latest_message
+                                })
+                        else:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Failed to send message"
+                            })
+                
+                elif data.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    
+            except Exception as e:
+                print(f"Error processing WebSocket message: {e}")
+                break
+                
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+    finally:
+        # Clean up connection
+        if user:
+            await manager.disconnect(room_name, websocket)
+            # Notify room that user left
+            await manager.broadcast(room_name, {
+                "type": "user_left",
+                "data": {
+                    "username": user["username"],
+                    "message": f"{user['username']} left the room"
+                }
+            })

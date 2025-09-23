@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin: 10px 0;
+        }
+        #messages {
+            height: 400px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            overflow-y: auto;
+            background-color: #f9f9f9;
+            margin: 10px 0;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 5px;
+        }
+        .my-message {
+            background-color: #e3f2fd;
+            text-align: right;
+        }
+        .other-message {
+            background-color: #fff;
+        }
+        .system-message {
+            background-color: #f0f0f0;
+            font-style: italic;
+            text-align: center;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+        }
+        #messageInput {
+            width: 70%;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Chat Test</h1>
+    
+    <div class="container">
+        <h3>Authentication</h3>
+        <input type="text" id="username" placeholder="Username" value="testuser">
+        <input type="password" id="password" placeholder="Password" value="testpass">
+        <button onclick="login()">Login</button>
+        <div id="token" style="margin-top: 10px; word-break: break-all;"></div>
+    </div>
+
+    <div class="container">
+        <h3>Room Management</h3>
+        <input type="text" id="newRoomName" placeholder="New room name">
+        <button onclick="createRoom()">Create Room</button>
+        <div id="roomStatus" style="margin-top: 10px;"></div>
+    </div>
+
+    <div class="container">
+        <h3>WebSocket Connection</h3>
+        <input type="text" id="roomName" placeholder="Room name" value="general">
+        <button onclick="connect()">Connect to Room</button>
+        <button onclick="disconnect()">Disconnect</button>
+        <div id="status" class="status disconnected">Disconnected</div>
+    </div>
+
+    <div class="container">
+        <h3>Chat</h3>
+        <div id="messages"></div>
+        <input type="text" id="messageInput" placeholder="Type your message...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        let ws = null;
+        let token = null;
+        let currentUser = null;
+        let currentRoom = null;
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch('http://localhost:8000/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Access-Control-Allow-Origin': '*',
+                        'Access-Control-Allow-Methods': 'POST'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    token = data.access_token;
+                    document.getElementById('token').innerHTML = `<strong>Token:</strong> ${token}`;
+                    addMessage('system', 'Login successful!');
+                } else {
+                    const error = await response.json();
+                    addMessage('system', `Login failed: ${error.detail}`);
+                }
+            } catch (error) {
+                addMessage('system', `Login error: ${error.message}`);
+            }
+        }
+
+        async function createRoom() {
+            if (!token) {
+                document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please login first</span>';
+                return;
+            }
+
+            const roomName = document.getElementById('newRoomName').value.trim();
+            if (!roomName) {
+                document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please enter a room name</span>';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:8000/create_room', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ room_name: roomName })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('roomStatus').innerHTML = `<span style="color: green;">${data.message}</span>`;
+                    document.getElementById('roomName').value = roomName; // Auto-fill the connect room field
+                    document.getElementById('newRoomName').value = ''; // Clear the input
+                    addMessage('system', `Room '${roomName}' created successfully!`);
+                } else {
+                    const error = await response.json();
+                    document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Failed to create room: ${error.detail}</span>`;
+                }
+            } catch (error) {
+                document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Error creating room: ${error.message}</span>`;
+            }
+        }
+
+        function connect() {
+            if (!token) {
+                addMessage('system', 'Please login first');
+                return;
+            }
+
+            const roomName = document.getElementById('roomName').value;
+            if (!roomName) {
+                addMessage('system', 'Please enter a room name');
+                return;
+            }
+
+            try {
+                ws = new WebSocket(`ws://localhost:8000/ws/${roomName}`);
+                
+                ws.onopen = function() {
+                    // Send authentication
+                    ws.send(JSON.stringify({
+                        type: 'auth',
+                        token: token
+                    }));
+                };
+
+                ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                };
+
+                ws.onclose = function() {
+                    document.getElementById('status').className = 'status disconnected';
+                    document.getElementById('status').textContent = 'Disconnected';
+                    addMessage('system', 'WebSocket connection closed');
+                };
+
+                ws.onerror = function(error) {
+                    addMessage('system', `WebSocket error: ${error.message}`);
+                };
+
+            } catch (error) {
+                addMessage('system', `Connection error: ${error.message}`);
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function handleWebSocketMessage(data) {
+            switch (data.type) {
+                case 'auth_success':
+                    currentUser = data.user;
+                    currentRoom = data.room;
+                    document.getElementById('status').className = 'status connected';
+                    document.getElementById('status').textContent = `Connected to ${currentRoom} as ${currentUser.username}`;
+                    addMessage('system', `Connected to room: ${currentRoom}`);
+                    break;
+
+                case 'message_history':
+                    document.getElementById('messages').innerHTML = '';
+                    data.data.forEach(message => {
+                        addMessage('message', `${message.username}: ${message.content}`, message.username === currentUser.username);
+                    });
+                    break;
+
+                case 'new_message':
+                    const msg = data.data;
+                    addMessage('message', `${msg.username}: ${msg.content}`, msg.username === currentUser.username);
+                    break;
+
+                case 'user_joined':
+                case 'user_left':
+                    addMessage('system', data.data.message);
+                    break;
+
+                case 'error':
+                    addMessage('system', `Error: ${data.message}`);
+                    break;
+
+                case 'pong':
+                    console.log('Received pong');
+                    break;
+            }
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addMessage('system', 'Not connected to WebSocket');
+                return;
+            }
+
+            if (!message) {
+                return;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'send_message',
+                message: message
+            }));
+
+            messageInput.value = '';
+        }
+
+        function addMessage(type, content, isMyMessage = false) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            
+            if (type === 'system') {
+                messageDiv.className = 'message system-message';
+            } else if (isMyMessage) {
+                messageDiv.className = 'message my-message';
+            } else {
+                messageDiv.className = 'message other-message';
+            }
+            
+            messageDiv.textContent = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Allow sending message with Enter key
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Send ping every 30 seconds to keep connection alive
+        setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
