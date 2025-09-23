@@ -504,15 +504,20 @@
         }, 30000);
 
         // Monitor WebSocket connection state every second for debugging
-        setInterval(() => {
-            if (ws) {
-                const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-                const currentState = states[ws.readyState] || 'UNKNOWN';
-                if (ws.readyState !== WebSocket.OPEN) {
-                    console.log(`WebSocket state check: ${currentState} (${ws.readyState})`);
+        // Debug flag: set to true to enable WebSocket state logging
+        const DEBUG = false;
+
+        if (DEBUG) {
+            setInterval(() => {
+                if (ws) {
+                    const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+                    const currentState = states[ws.readyState] || 'UNKNOWN';
+                    if (ws.readyState !== WebSocket.OPEN) {
+                        console.log(`WebSocket state check: ${currentState} (${ws.readyState})`);
+                    }
                 }
-            }
-        }, 1000);
+            }, 1000);
+        }
     </script>
 </body>
 </html>
