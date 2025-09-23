@@ -1,8 +1,10 @@
 #sidebar {
-    width: 20%;       /* narrow strip on left */
-    background: blue;
-    color: white;
+    width: 20%;             /* narrow strip on left *//* gives a distinct background */
+    color: white;           /* text color */
+    border: tall white;     /* creates a visible border instead of outline */
+    padding-left: 1;             /* spacing inside the sidebar */
 }
+
 
 #main {
     background: black;
