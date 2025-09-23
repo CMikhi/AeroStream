@@ -14,7 +14,7 @@ API for chat TUI using FastAPI, JWT, and SQLite
 2. FastAPI app handles HTTP requests and responses.
 3. RoomService manages chat rooms and their participants.
 4. LoginService manages user authentication and JWT issuance.
-    - Passwords are hashed using bcrypt via passlib.
+    * Passwords are hashed using bcrypt via passlib.
 5. Responses are sent using JSON with status codes and messages.
 '''
 
