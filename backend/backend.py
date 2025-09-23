@@ -2,16 +2,18 @@ from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocke
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-
-from .roomService import RoomService
-from .messageService import MessageService
-from .ws_manager import manager
+from typing import Optional
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 import os
 import json
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
+
+# Local imports
+from .ws_manager import manager
+from .roomService import RoomService
+from .messageService import MessageService
 '''
 API for chat TUI using FastAPI, JWT, and SQLite
 
@@ -84,7 +86,7 @@ class MessageRequest(BaseModel):
     message: str
 
 # Utility: create jwt with int timestamps
-def create_access_token(subject: str, expires_delta: timedelta = None):
+def create_access_token(subject: str, expires_delta: Optional[timedelta] = None):
     now = datetime.now(timezone.utc)
     if expires_delta:
         expire = now + expires_delta
