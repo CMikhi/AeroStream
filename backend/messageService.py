@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Dict, Optional, Any
-''
+
 class MessageService:
     def __init__(self, db_manager):
         self.db_manager = db_manager
@@ -56,8 +56,8 @@ class MessageService:
             if limit:
                 # Efficiently get the most recent messages in chronological order using LIMIT and OFFSET
                 count_query = "SELECT COUNT(*) FROM messages WHERE room_id = ?"
-                count_result = self.db_manager.fetch_one(count_query, (room_id,))
-                total_count = count_result[0] if count_result else 0
+                count_result = self.db_manager.fetch_all(count_query, (room_id,))
+                total_count = count_result[0][0] if count_result else 0
                 offset = max(total_count - limit, 0)
                 query = """
                     SELECT 
