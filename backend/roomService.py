@@ -1,5 +1,3 @@
-from dbManager import DatabaseManager as db_manager
-
 class RoomService:
     def __init__(self, db_manager):
         self.db_manager = db_manager
@@ -10,7 +8,7 @@ class RoomService:
         rooms = {}
         db_rooms = self.db_manager.fetch_all(query="SELECT * FROM rooms")
         for room in db_rooms:
-            rooms[room['name']] = room.get('members', [])
+            rooms[room['name']] = room['members'] if 'members' in room else []
         return rooms
 
     def create_room(self, room_name):

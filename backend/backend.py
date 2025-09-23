@@ -1,12 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from roomService import RoomService
+from .roomService import RoomService
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 import os
 from passlib.context import CryptContext
-
 '''
 API for chat TUI using FastAPI, JWT, and SQLite
 
@@ -25,9 +24,6 @@ app = FastAPI()
 
 # You don;t need a .env, this isn't prod and is simply just for fun
 SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    # in dev this is okay, but in production fail fast so people don't run with a bad secret
-    SECRET_KEY = "SUPERSECRETKEY12345!" # W
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

@@ -113,6 +113,7 @@ if __name__ == "__main__":
     CREATE TABLE IF NOT EXISTS rooms (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         room_key TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
         created_by INTEGER,
         FOREIGN KEY (created_by) REFERENCES users (id)
     );
