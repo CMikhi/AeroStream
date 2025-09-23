@@ -160,28 +160,34 @@ async def login(data: AuthRequest):
 # Route to join a room (checks if room exists)
 @app.post("/join_room")
 async def join_room(data: RoomRequest, current_user: dict = Depends(get_current_user)):
-    rooms = db_manager.fetch_all("SELECT * FROM rooms WHERE room_key = ?", (data.room_name,))
-    if rooms:
-        return {"message": "Joined room successfully"}
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+    result = room_service.join_room(data.room_name)
+    if result["success"]:
+        return {"message": result["message"]}
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["message"])
 
 # Route to create a room, takes in a room name and a user then creates the room
 @app.post("/create_room")
 async def create_room(data: RoomRequest, current_user: dict = Depends(get_current_user)):
-    db_manager.execute_query("INSERT INTO rooms (room_key, created_by) VALUES (?, ?)", (data.room_name, current_user["id"]))
-    return {"message": "Room created successfully"}
+    result = room_service.create_room(data.room_name, current_user["id"])
+    if result["success"]:
+        return {"message": result["message"]}
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["message"])
 
 
 # Route to send a message to a room
 # Takes a room name and message, checks if the room exists, then stores the message with the user and room ids
 @app.post("/send_message")
 async def send_message(data: MessageRequest, current_user: dict = Depends(get_current_user)):
-    rooms = db_manager.fetch_all("SELECT id FROM rooms WHERE room_key = ?", (data.room_name,))
-    if not rooms:
+    room_id = room_service.get_room_id(data.room_name)
+    if not room_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    room_id = rooms[0][0]
-    db_manager.execute_query("INSERT INTO messages (user_id, room_id, content) VALUES (?, ?, ?)",
-                             (current_user["id"], room_id, data.message))
+    
+    db_manager.execute_query(
+        "INSERT INTO messages (user_id, room_id, content) VALUES (?, ?, ?)",
+        (current_user["id"], room_id, data.message)
+    )
     return {"message": "Message sent successfully"}
 
 @app.get("/get_messages/{room_name}")

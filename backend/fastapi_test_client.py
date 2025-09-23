@@ -3,12 +3,12 @@
 Simple CLI test client for a FastAPI app.
 Requires: pip install requests
 Usage examples:
-  python3 fastapi_test_client.py --url http://localhost:8000 root
-  python3 fastapi_test_client.py --url http://localhost:8000 register --username bob --password hunter2
-  python3 fastapi_test_client.py --url http://localhost:8000 login --username bob --password hunter2 --save
-  python3 fastapi_test_client.py --url http://localhost:8000 create_room --room myroom
-  python3 fastapi_test_client.py --url http://localhost:8000 join_room --room myroom
-  python3 fastapi_test_client.py --url http://localhost:8000 send_message --room myroom --message "hello"
+  python backend/fastapi_test_client.py --url http://localhost:8000 root
+  python backend/fastapi_test_client.py --url http://localhost:8000 register --username bob --password hunter2
+  python backend/fastapi_test_client.py --url http://localhost:8000 login --username bob --password hunter2 --save
+  python backend/fastapi_test_client.py --url http://localhost:8000 create_room --room myroom
+  python backend/fastapi_test_client.py --url http://localhost:8000 join_room --room myroom
+  python backend/fastapi_test_client.py --url http://localhost:8000 send_message --room myroom --message "hello"
 """
 
 import argparse
