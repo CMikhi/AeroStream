@@ -364,7 +364,7 @@ class AeroStream(App):
         """Handle settings command."""
         self.notify("Selected: Settings")
     
-    # Additional Vim-style command handlers
+    # TODO: Update to variable version function
     def _version_command(self):
         """Handle version command."""
         return "Ignite TUI v1.0.0 - rolling-4b0a60e"
