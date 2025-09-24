@@ -1,7 +1,7 @@
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Middle, Vertical
-from textual.widgets import Static, Footer
+from textual.containers import Center, Middle, Vertical, Horizontal
+from textual.widgets import Static, Footer, Input, Button
 from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode
@@ -25,7 +25,7 @@ def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1
         img = Image.eval(img, lambda p: 255 if p > threshold else 0)
 
         aspect_ratio = img.height / img.width
-        new_height = int(aspect_ratio * width * 0.55)
+        new_height = int(aspect_ratio * width * 0.35)
         img = img.resize((width, new_height))
         pixels = img.getdata()
 
@@ -70,8 +70,13 @@ class MenuItem(Static):
         self.shortcut = shortcut
     
     def render(self) -> str:
-        return f"[bright_white]{self.icon}[/] [white]{self.label}[/]"
-
+        main_content = f"[bright_white]{self.icon}[/] [white]{self.label}[/]"
+        shortcut_part = f"[dim]{self.shortcut}[/]"
+        # Add padding to create space between content and shortcut
+        padding = " " * (40 - 1 - len(self.label))  # Adjust 40 to change spacing
+        if self.label == 'settings':
+            padding = (" " * (33 - 1 - len(self.label)))+" " # Adjust 40 to change spacing
+        return f"{main_content}{padding}{shortcut_part}"
 
 class CommandLine(Static):
     """A dedicated command line widget for handling text input display."""
@@ -115,32 +120,104 @@ class CommandLine(Static):
                 self.app.refresh()
 
 
-class SplashScreen(Static):
-    """The main splash screen container."""
-
+class LoginScreen(Static):
+    """The login screen with username/password inputs."""
+    
     def compose(self) -> ComposeResult:
         with Center():
             with Middle():
-                with Vertical(classes="main-container"):
+                with Vertical():
                     # ASCII Art Logo
                     yield Static(CUSTOM_ASCII_ART, classes="ascii-art")
                     
-                    # Menu items
-                    with Vertical(classes="menu-container"):
-                        yield MenuItem("⌘", "Login", "l", classes="menu-item")
-                        yield MenuItem("📄", "Register", "r", classes="menu-item")
-                        yield MenuItem("📁", "Rooms", "p", classes="menu-item")
-                        yield MenuItem("🕐", "Recent Rooms", "t", classes="menu-item")
-                        yield MenuItem("⚙️", "Settings", "c", classes="menu-item")
+                    # Login form
                     
+                    with Vertical(classes="form-container"):
+                        with Center():
+                            yield Input(placeholder="Username", id="username-input", classes="login-input")
+                            yield Input(placeholder="Password", password=True, id="password-input", classes="login-input")
+                            
+                            # Buttons container
+                            with Horizontal(classes="button-container"):
+                                yield Button("Login", id="login-btn", variant="primary", classes="auth-button")
+                                yield Button("Register", id="register-btn", variant="primary", classes="auth-button")
+                                
                     # Version info at bottom
                     yield Static("https://homebred-irredeemably-madie.ngrok-free.dev/test\nrolling-4b0a60e", classes="version-info")
+
+
+class MainMenuScreen(Static):
+    """The main menu screen after successful login."""
+    
+    def compose(self) -> ComposeResult:
+        with Center():
+            with Middle():
+                with Vertical():
+                    # ASCII Art Logo (smaller)
+                    yield Static(CUSTOM_ASCII_ART, classes="ascii-art")
+
+                    with Vertical(classes="main-content"):
+                        with Center():
+                            # Welcome message with username
+                            yield Static("Welcome back!", id="welcome-msg", classes="welcome-back")
+                            # Menu items
+                            with Center(classes="menu-container"):
+                                yield MenuItem("📁", "Rooms", "r", classes="menu-item")
+                                yield MenuItem("🕐", "Recent Rooms", "h", classes="menu-item") 
+                                yield MenuItem("⚙️", "Settings", "s", classes="menu-item")
+                                yield MenuItem("🚪", "Logout", "q", classes="menu-item")
+        
+
+class SplashScreen(Static):
+    """The main splash screen container that manages login/main menu."""
+
+    def __init__(self):
+        super().__init__()
+        self.current_screen = "login"  # "login" or "main"
+        self.username = ""
+
+    def compose(self) -> ComposeResult:
+        # Start with login screen
+        yield LoginScreen(id="login-screen")
         
         # Command line positioned at bottom left (outside the centered container)
         yield CommandLine(id="command-line", classes="command-line")
         
         # Footer with quick commands
         yield Footer()
+    
+    def switch_to_main_menu(self, username: str):
+        """Switch from login screen to main menu."""
+        self.username = username
+        self.current_screen = "main"
+        
+        # Remove login screen and add main menu
+        login_screen = self.query_one("#login-screen")
+        login_screen.remove()
+        
+        main_menu = MainMenuScreen()
+        main_menu.id = "main-screen"
+        self.mount(main_menu, before="#command-line")
+        
+        # Update welcome message
+        welcome_msg = self.query_one("#welcome-msg")
+        welcome_msg.update(f"Welcome back, {username}!")
+    
+    def switch_to_login(self):
+        """Switch from main menu back to login screen."""
+        self.current_screen = "login"
+        self.username = ""
+        
+        # Remove main screen and add login screen
+        try:
+            main_screen = self.query_one("#main-screen")
+            main_screen.remove()
+        except:
+            pass
+        
+        login_screen = LoginScreen()
+        login_screen.id = "login-screen"
+        self.mount(login_screen, before="#command-line")
 
 
 
@@ -157,11 +234,9 @@ class AeroStream(App):
             description="Show help screen",
             key_display="?",
         ),
-        Binding(key="l", action="login", description="Login"),
-        Binding(key="r", action="register", description="Register"),
-        Binding(key="p", action="rooms", description="Rooms"),
-        Binding(key="t", action="recent", description="Recent Rooms"),
-        Binding(key="c", action="settings", description="Settings"),
+        Binding(key="r", action="rooms", description="Rooms", show=False),
+        Binding(key="h", action="recent", description="Recent", show=False),
+        Binding(key="s", action="settings", description="Settings", show=False),
         Binding(key="colon", action="command_mode", description="Command mode"),
     ]
     
@@ -176,41 +251,150 @@ class AeroStream(App):
         width: 100%;
     }
     
-    .main-container {
-        width: auto;
-        height: auto;
+    /* Login Screen Styles */
+    .login-container {
+        align: center middle;
+        width: 100%;
+        height: 100%;
         text-align: center;
-        align-horizontal: center;
+    }
+    
+    .form-container {
+        text-align: center;
+        align: center middle;
+        width: 100%;
+        height: auto;
+        padding: 2;
+    }
+    
+    .welcome-text {
+        color: #b4befe;
+        text-align: center;
+        margin: 1 0 2 0;
+        text-style: bold;
+    }
+    
+    .login-input {
+        margin: 1 2;
+        
+        width: 80%;
+        background: #45475a;
+        color: #cdd6f4;
+        border: solid #6c7086;
+    }
+    
+    .login-input:focus {
+        border: solid #89b4fa;
+        background: #313244;
+    }
+    
+    .button-container {
+        align: center middle;
+        margin: 2 0 1 0;
+        width: 80%;
+        height: auto;
+    }
+    
+    .auth-button {
+        align: center middle;
+        text-align: center;
+        margin: 1 2;
+        width: 20;
+        height: 1;
+        color: #cdd6f4;
+    }
+    
+    Button.auth-button.-primary {
+        background: #89b4fa;
+        color: #1e1e2e;
+        border: none;
+    }
+    
+    Button.auth-button.-primary:hover {
+        background: #b4befe;
+    }
+    
+    Button.auth-button.-default {
+        background: #45475a;
+        color: #cdd6f4;
+        border: solid #6c7086;
+    }
+    
+    Button.auth-button.-default:hover {
+        background: #585b70;
+        border: solid #89b4fa;
+    }
+    
+    /* Main Menu Styles */
+    .main-container {
+        align: center middle;
+        width: 100vw;
+        height: 100vh;
+        text-align: center;
     }
     
     .ascii-art {
         color: #b4befe;
-        margin-top: -8;
+        text-align: center;
+        width: 100%;
+        height: auto;
+        align-horizontal: center;
+    }
+    
+    .ascii-art-small {
+        color: #b4befe;
+        margin-top: -6;
         text-align: center;
         width: auto;
         height: auto;
         align-horizontal: center;
+    }
+
+    .main-content {
+        align: center middle;
+        width: 100%;
+        height: auto;
+        padding: 2;
+    }
+
+    .welcome-back {
+        align: center middle;
+        color: #a6e3a1;
+        text-align: center;
+        text-style: bold;
     }
     
     .menu-container {
-        width: auto;
+        align: center middle;
+        width: 100vw;
         height: auto;
-        margin: 0 0 4 0;
-        text-align: center;
-        align-horizontal: center;
-        margin-left: 20;
+        padding: 2;
+        
     }
     
     .menu-item {
-        margin: 1 0;
-        text-align: left;
-        width: auto;
-        padding: 0 2;
+        align: center middle;
+        width: 50;
+        height: auto;
+        padding: 1;
+        margin-left: -2;
     }
     
     .menu-item:hover {
-        background: #313244;
+        background: #45475a;
         color: #89b4fa;
+    }
+    
+    .logout-item {
+        color: #f38ba8;
+        border-top: solid #45475a;
+        margin-top: 2;
+        padding-top: 2;
+    }
+    
+    .logout-item:hover {
+        background: #45475a;
+        color: #f38ba8;
     }
     
     .version-info {
@@ -246,6 +430,8 @@ class AeroStream(App):
         self.keyboard_handler = KeyboardHandler(self)
         self._setup_keyboard_callbacks()
         self._register_custom_commands()
+        self.splash_screen = None
+        self.is_authenticated = False
     
     def _setup_keyboard_callbacks(self):
         """Set up callbacks for keyboard handler events."""
@@ -256,12 +442,15 @@ class AeroStream(App):
     
     def _register_custom_commands(self):
         """Register application-specific commands."""
+        # Authentication commands
+        self.keyboard_handler.register_command("login", self._login_command, "Login to your account", ["l"])
+        self.keyboard_handler.register_command("register", self._register_command, "Register a new account", ["reg"])
+        self.keyboard_handler.register_command("logout", self._logout_command, "Logout from your account", ["exit"])
+        
         # Menu navigation commands (with colon command support)
-        self.keyboard_handler.register_command("login", self._login_command, "Go to login screen", ["l"])
-        self.keyboard_handler.register_command("register", self._register_command, "Go to register screen", ["r", "reg"])
-        self.keyboard_handler.register_command("rooms", self._rooms_command, "Go to rooms screen", ["p", "projects"])
-        self.keyboard_handler.register_command("recent", self._recent_command, "Go to recent rooms screen", ["t", "history"])
-        self.keyboard_handler.register_command("settings", self._settings_command, "Go to settings screen", ["config", "preferences"])
+        self.keyboard_handler.register_command("rooms", self._rooms_command, "Go to rooms screen", ["r", "room"])
+        self.keyboard_handler.register_command("recent", self._recent_command, "Go to recent rooms screen", ["h", "history"])
+        self.keyboard_handler.register_command("settings", self._settings_command, "Go to settings screen", ["s", "config", "preferences"])
         
         # Additional Vim-style commands
         self.keyboard_handler.register_command("version", self._version_command, "Show application version", ["v", "ver"])
@@ -287,11 +476,9 @@ class AeroStream(App):
         
         # Re-register single-key commands since Textual bindings are disabled (show=False)
         # These will now be handled exclusively by KeyboardHandler
-        self.keyboard_handler.register_single_key("l", self._login_command)
-        self.keyboard_handler.register_single_key("r", self._register_command)
-        self.keyboard_handler.register_single_key("p", self._rooms_command)
-        self.keyboard_handler.register_single_key("t", self._recent_command)
-        self.keyboard_handler.register_single_key("c", self._settings_command)
+        self.keyboard_handler.register_single_key("r", self._rooms_command)
+        self.keyboard_handler.register_single_key("h", self._recent_command)
+        self.keyboard_handler.register_single_key("s", self._settings_command)
         
         # Note: q and ? are still handled by Textual's binding system
         # : (colon) is handled by KeyboardHandler in the on_key method
@@ -346,23 +533,45 @@ class AeroStream(App):
     # Command handlers
     def _login_command(self):
         """Handle login command."""
-        self.notify("Selected: Login")
+        if not self.is_authenticated:
+            self._handle_login()
+        else:
+            self.notify("Already logged in")
     
     def _register_command(self):
         """Handle register command."""
-        self.notify("Selected: Register")
+        if not self.is_authenticated:
+            self._handle_register()
+        else:
+            self.notify("Please logout first to register a new account")
+    
+    def _logout_command(self):
+        """Handle logout command."""
+        if self.is_authenticated:
+            self._handle_logout()
+        else:
+            self.notify("Not currently logged in")
     
     def _rooms_command(self):
         """Handle rooms command."""
-        self.notify("Selected: Rooms")
+        if self.is_authenticated:
+            self.notify("Selected: Rooms")
+        else:
+            self.notify("Please login first")
     
     def _recent_command(self):
         """Handle recent rooms command."""
-        self.notify("Selected: Recent Rooms")
+        if self.is_authenticated:
+            self.notify("Selected: Recent Rooms")
+        else:
+            self.notify("Please login first")
     
     def _settings_command(self):
         """Handle settings command."""
-        self.notify("Selected: Settings")
+        if self.is_authenticated:
+            self.notify("Selected: Settings")
+        else:
+            self.notify("Please login first")
     
     # TODO: Update to variable version function
     def _version_command(self):
@@ -421,38 +630,65 @@ class AeroStream(App):
     
     def _custom_help_command(self):
         """Handle custom help command with both single-key and colon commands."""
-        help_text = """
-╭─ Ignite TUI Help ─────────────────────────────────────────────────╮
+        if self.is_authenticated:
+            help_text = """
+╭─ Ignite TUI Help (Authenticated) ────────────────────────────────╮
 │                                                                   │
 │  Single Key Commands (press directly):                           │
-│    l - Login                    r - Register                     │
-│    p - Rooms                    t - Recent Rooms                 │
-│    c - Settings                 h/? - Help                       │
+│    r - Rooms                    h - Recent Rooms                 │
+│    s - Settings                 ? - Help                         │
 │    q - Quit                     : - Command mode                 │
 │                                                                   │
 │  Colon Commands (press : then type):                             │
-│    :help, :h         - Show this help                           │
-│    :quit, :q         - Exit application                         │
-│    :login, :l        - Go to login                              │
-│    :register, :r     - Go to register                           │
-│    :rooms, :p        - Go to rooms                              │
-│    :recent, :t       - Recent rooms                             │
-│    :settings, :config - Settings                                │
-│    :version, :v      - Show version                             │
-│    :status, :st      - Show status                              │
-│    :save, :w         - Save state                               │
-│    :refresh, :reload - Refresh interface                        │
+│    :help                 - Show this help                       │
+│    :quit, :q             - Exit application                     │
+│    :rooms, :r, :room     - Go to rooms                          │
+│    :recent, :h, :history - Recent rooms                         │
+│    :settings, :s, :config - Settings                            │
+│    :logout, :exit        - Logout                               │
+│    :version, :v          - Show version                         │
+│    :status, :st          - Show status                          │
+│    :save, :w             - Save state                           │
+│    :refresh, :reload     - Refresh interface                    │
 │                                                                   │
 │  Command Mode Navigation:                                         │
 │    Enter - Execute command      Escape - Cancel                  │
 │    ↑/↓ - Command history        Backspace - Delete char         │
 │                                                                   │
 ╰───────────────────────────────────────────────────────────────────╯
-        """
+            """
+        else:
+            help_text = """
+╭─ Ignite TUI Help (Login Required) ───────────────────────────────╮
+│                                                                   │
+│  Login Interface:                                                 │
+│    Tab/Shift+Tab - Navigate between username/password fields    │
+│    Enter - Submit login form                                     │
+│    ? - Help                     q - Quit                         │
+│    : - Command mode                                               │
+│                                                                   │
+│  Colon Commands (press : then type):                             │
+│    :help                 - Show this help                       │
+│    :quit, :q             - Exit application                     │
+│    :login, :l            - Attempt login with current fields    │
+│    :register, :reg       - Attempt registration                 │
+│    :version, :v          - Show version                         │
+│    :status, :st          - Show status                          │
+│    :refresh, :reload     - Refresh interface                    │
+│                                                                   │
+│  Command Mode Navigation:                                         │
+│    Enter - Execute command      Escape - Cancel                  │
+│    ↑/↓ - Command history        Backspace - Delete char         │
+│                                                                   │
+│  Note: Most features require login. Please authenticate first.   │
+│                                                                   │
+╰───────────────────────────────────────────────────────────────────╯
+            """
         return help_text.strip()
     
     def compose(self) -> ComposeResult:
-        yield SplashScreen()
+        self.splash_screen = SplashScreen()
+        yield self.splash_screen
     
     # Action methods for Textual bindings (dummy methods to prevent double execution)
     def action_help(self) -> None:
@@ -461,35 +697,85 @@ class AeroStream(App):
         if result:
             self.notify(result)
     
-    def action_login(self) -> None:
-        """Dummy action - KeyboardHandler handles this."""
-        pass
-    
-    def action_register(self) -> None:
-        """Dummy action - KeyboardHandler handles this."""
-        pass
-    
     def action_rooms(self) -> None:
-        """Dummy action - KeyboardHandler handles this."""
-        pass
+        """Handle rooms action."""
+        self._rooms_command()
     
     def action_recent(self) -> None:
-        """Dummy action - KeyboardHandler handles this."""
-        pass
+        """Handle recent action."""
+        self._recent_command()
     
     def action_settings(self) -> None:
-        """Dummy action - KeyboardHandler handles this."""
-        pass
+        """Handle settings action."""
+        self._settings_command()
     
     def action_command_mode(self) -> None:
         """Dummy action - KeyboardHandler handles this."""
         pass
 
+    def on_button_pressed(self, event) -> None:
+        """Handle button press events."""
+        if event.button.id == "login-btn":
+            self._handle_login()
+        elif event.button.id == "register-btn":
+            self._handle_register()
+    
+    def _handle_login(self):
+        """Handle login button press."""
+        try:
+            username_input = self.query_one("#username-input")
+            password_input = self.query_one("#password-input")
+            
+            username = username_input.value.strip()
+            password = password_input.value.strip()
+            
+            if not username or not password:
+                self.notify("Please enter both username and password", severity="error")
+                return
+            
+            # TODO: Add actual authentication logic here
+            # For now, simulate successful login
+            self.is_authenticated = True
+            self.splash_screen.switch_to_main_menu(username)
+            self.notify(f"Welcome, {username}!", severity="information")
+            
+        except Exception as e:
+            self.notify("Login failed. Please try again.", severity="error")
+    
+    def _handle_register(self):
+        """Handle register button press."""
+        try:
+            username_input = self.query_one("#username-input")
+            password_input = self.query_one("#password-input")
+            
+            username = username_input.value.strip()
+            password = password_input.value.strip()
+            
+            if not username or not password:
+                self.notify("Please enter both username and password", severity="error")
+                return
+            
+            # TODO: Add actual registration logic here
+            # For now, simulate successful registration
+            self.notify(f"Account created for {username}! Please login.", severity="information")
+            
+        except Exception as e:
+            self.notify("Registration failed. Please try again.", severity="error")
+    
+    def _handle_logout(self):
+        """Handle logout action."""
+        self.is_authenticated = False
+        self.splash_screen.switch_to_login()
+        self.notify("Logged out successfully", severity="information")
+
     def on_key(self, event) -> None:
         """Handle keyboard shortcuts using the KeyboardHandler."""
         
-        # Keys that Textual bindings will handle (these will call dummy action methods)
-        textual_binding_keys = {"q", "question_mark", "l", "r", "p", "t", "c", "colon"}
+        # Update binding keys based on current screen
+        if self.is_authenticated:
+            textual_binding_keys = {"q", "question_mark", "r", "h", "s", "colon"}
+        else:
+            textual_binding_keys = {"q", "question_mark", "colon"}
         
         # Special handling for q and ? - only let Textual handle them in normal mode
         if event.key in {"q", "question_mark"}:
@@ -502,15 +788,22 @@ class AeroStream(App):
             else:
                 return  # Let Textual's binding system handle it
         
+        # Handle authenticated screen shortcuts
+        if self.is_authenticated and event.key in {"r", "h", "s"}:
+            if event.key == "r":
+                self._rooms_command()
+            elif event.key == "h":
+                self._recent_command()
+            elif event.key == "s":
+                self._settings_command()
+            return
+        
         # If this key has a Textual binding, let Textual handle it first (calls dummy method)
         # then let KeyboardHandler also process it for actual functionality
         if event.key in textual_binding_keys:
             # For colon specifically, we want KeyboardHandler to handle the command mode logic
             if event.key == "colon":
                 self.keyboard_handler.handle_key(":")
-            # For other bound keys, let KeyboardHandler process them too
-            elif event.key in {"l", "r", "p", "t", "c"}:
-                self.keyboard_handler.handle_key(event.key)
             return
         
         # For all other keys, use the keyboard handler normally
@@ -520,7 +813,10 @@ class AeroStream(App):
         if not handled and self.keyboard_handler.mode == KeyboardMode.NORMAL:
             # Only show unhandled key notifications for single character keys that aren't common navigation
             if len(event.key) == 1 and event.key.isalnum():
-                self.notify(f"Unhandled key: '{event.key}' - Try pressing ':' for command mode or 'h' for help")
+                if self.is_authenticated:
+                    self.notify(f"Unhandled key: '{event.key}' - Try 'r' (rooms), 'h' (recent), 's' (settings), or ':' for command mode")
+                else:
+                    self.notify(f"Unhandled key: '{event.key}' - Please login first or try ':' for command mode")
             # For special keys, we might want to handle them silently
             pass
 
