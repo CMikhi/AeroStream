@@ -6,9 +6,113 @@ from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode
 
-def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1.5, brightness_factor: float = 1.2, threshold: int = 150) -> str:
+class Colors:
+    """ANSI color codes for terminal output"""
+    # Standard colors
+    BLACK = '\033[30m'
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
+    
+    # Bright colors
+    BRIGHT_BLACK = '\033[90m'
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_BLUE = '\033[94m'
+    BRIGHT_MAGENTA = '\033[95m'
+    BRIGHT_CYAN = '\033[96m'
+    BRIGHT_WHITE = '\033[97m'
+    
+    # Reset
+    RESET = '\033[0m'
+
+
+def apply_rainbow_effect(text: str) -> str:
+    """Apply rainbow color effect to text"""
+    rainbow_colors = [
+        Colors.RED, Colors.YELLOW, Colors.GREEN, 
+        Colors.CYAN, Colors.BLUE, Colors.MAGENTA
+    ]
+    colored_text = ""
+    color_index = 0
+    
+    for char in text:
+        if char != ' ':
+            colored_text += rainbow_colors[color_index % len(rainbow_colors)] + char
+            color_index += 1
+        else:
+            colored_text += char
+    
+    return colored_text + Colors.RESET
+
+
+def apply_fire_effect(text: str, line_num: int) -> str:
+    """Apply fire color effect (red to yellow gradient)"""
+    fire_colors = [Colors.BRIGHT_RED, Colors.RED, Colors.YELLOW, Colors.BRIGHT_YELLOW]
+    color = fire_colors[line_num % len(fire_colors)]
+    
+    colored_text = ""
+    for char in text:
+        if char != ' ':
+            colored_text += color + char
+        else:
+            colored_text += char
+    
+    return colored_text + Colors.RESET
+
+
+def apply_ocean_effect(text: str, line_num: int) -> str:
+    """Apply ocean color effect (blue to cyan gradient)"""
+    ocean_colors = [Colors.BLUE, Colors.BRIGHT_BLUE, Colors.CYAN, Colors.BRIGHT_CYAN]
+    color = ocean_colors[line_num % len(ocean_colors)]
+    
+    colored_text = ""
+    for char in text:
+        if char != ' ':
+            colored_text += color + char
+        else:
+            colored_text += char
+    
+    return colored_text + Colors.RESET
+
+
+def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1.5, brightness_factor: float = 1.2, threshold: int = 150, color: str = None) -> str:
     """Convert an image to ASCII art with increased contrast and brightness, and remove surrounding whitespace.
-    Skip sections under a certain brightness or confidence."""
+    Skip sections under a certain brightness or confidence.
+    
+    Args:
+        image_path: Path to the image file
+        width: Width of the ASCII art
+        contrast_factor: Contrast enhancement factor
+        brightness_factor: Brightness enhancement factor
+        threshold: Threshold for removing whitespace
+        color: Color theme ('red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white', 
+               'bright_red', 'bright_green', 'bright_blue', 'bright_yellow', 'bright_magenta', 
+               'bright_cyan', 'bright_white', 'rainbow', 'fire', 'ocean', or None for no color)
+    """
+    
+    # Color themes mapping
+    color_themes = {
+        'red': Colors.RED,
+        'green': Colors.GREEN,
+        'blue': Colors.BLUE,
+        'yellow': Colors.YELLOW,
+        'magenta': Colors.MAGENTA,
+        'cyan': Colors.CYAN,
+        'white': Colors.WHITE,
+        'bright_red': Colors.BRIGHT_RED,
+        'bright_green': Colors.BRIGHT_GREEN,
+        'bright_blue': Colors.BRIGHT_BLUE,
+        'bright_yellow': Colors.BRIGHT_YELLOW,
+        'bright_magenta': Colors.BRIGHT_MAGENTA,
+        'bright_cyan': Colors.BRIGHT_CYAN,
+        'bright_white': Colors.BRIGHT_WHITE,
+    }
 
     chars = ["@", "#", "S", "%", "?", "*", "+", " ", " ", " ", " "]  # Replace "." with " " for whitespace
     try:
@@ -31,27 +135,69 @@ def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1
 
         ascii_str = ""
         for pixel in pixels:
-            # if pixel >= min_brightness:
             ascii_str += chars[pixel // 25]
-            # else:
-            #ascii_str += " "  # Use space for sections below min_brightness
 
         ascii_lines = [ascii_str[i:i + width] for i in range(0, len(ascii_str), width)]
+        
+        # Apply color effects if specified (using Textual markup instead of ANSI codes)
+        if color:
+            colored_lines = []
+            for line_num, line in enumerate(ascii_lines):
+                if color == 'rainbow':
+                    # For Textual, we'll use a single color per line cycling through rainbow
+                    rainbow_colors_textual = ["red", "yellow", "green", "cyan", "blue", "magenta"]
+                    textual_color = rainbow_colors_textual[line_num % len(rainbow_colors_textual)]
+                    colored_lines.append(f"[{textual_color}]{line}[/]")
+                elif color == 'fire':
+                    # Fire effect using Textual colors
+                    fire_colors_textual = ["bright_red", "red", "yellow", "bright_yellow"]
+                    textual_color = fire_colors_textual[line_num % len(fire_colors_textual)]
+                    colored_lines.append(f"[{textual_color}]{line}[/]")
+                elif color == 'ocean':
+                    # Ocean effect using Textual colors
+                    ocean_colors_textual = ["blue", "bright_blue", "cyan", "bright_cyan"]
+                    textual_color = ocean_colors_textual[line_num % len(ocean_colors_textual)]
+                    colored_lines.append(f"[{textual_color}]{line}[/]")
+                elif color in color_themes:
+                    # Map ANSI color names to Textual color names
+                    textual_color_map = {
+                        'red': 'red',
+                        'green': 'green', 
+                        'blue': 'blue',
+                        'yellow': 'yellow',
+                        'magenta': 'magenta',
+                        'cyan': 'cyan',
+                        'white': 'white',
+                        'bright_red': 'bright_red',
+                        'bright_green': 'bright_green',
+                        'bright_blue': 'bright_blue', 
+                        'bright_yellow': 'bright_yellow',
+                        'bright_magenta': 'bright_magenta',
+                        'bright_cyan': 'bright_cyan',
+                        'bright_white': 'bright_white',
+                    }
+                    textual_color = textual_color_map.get(color, 'white')
+                    colored_lines.append(f"[{textual_color}]{line}[/]")
+                else:
+                    colored_lines.append(line)  # No color if unknown
+            return "\n".join(colored_lines)
+        
         return "\n".join(ascii_lines)
     except Exception as e:
         return f"Error generating ASCII art: {e}"
 
-# Generate ASCII art from a .png file
+# Generate ASCII art from a .png file with color
 try:
-    CUSTOM_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80)
+    CUSTOM_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="red")
 except FileNotFoundError:
     try:
         with open("CLI/assets/simple_ascii-art.txt", "r") as file:
             original_art = file.read()
-            CUSTOM_ASCII_ART = original_art
+            # Apply color using Textual markup
+            CUSTOM_ASCII_ART = f"[bright_cyan]{original_art}[/]"
     except FileNotFoundError:
-        # Fallback to simple text if file not found
-        CUSTOM_ASCII_ART = r"""
+        # Fallback to simple text with color
+        fallback_art = r"""
         ___            _ _       
         | _|__ _ _ __ (_) |_ ___ 
         | |/ _` | '_ \| | __/ _ \
@@ -59,6 +205,141 @@ except FileNotFoundError:
         |___\__, |_| |_|_|\__\___|
             |___/                
         """
+        # Apply color using Textual markup
+        CUSTOM_ASCII_ART = f"[bright_cyan]{fallback_art}[/]"
+
+# Generate alternative colored ASCII art variants for different contexts
+try:
+    # Rainbow version for special occasions
+    RAINBOW_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="rainbow")
+    
+    # Fire effect for energy/action contexts  
+    FIRE_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="fire")
+    
+    # Ocean effect for calm/peaceful contexts
+    OCEAN_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="ocean")
+    
+    # Green for success/login contexts
+    SUCCESS_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="bright_green")
+    
+except FileNotFoundError:
+    # Use the main ASCII art as fallbacks
+    RAINBOW_ASCII_ART = CUSTOM_ASCII_ART
+    FIRE_ASCII_ART = CUSTOM_ASCII_ART  
+    OCEAN_ASCII_ART = CUSTOM_ASCII_ART
+    SUCCESS_ASCII_ART = CUSTOM_ASCII_ART
+
+def get_colored_ascii_art(color: str = "bright_cyan") -> str:
+    """Get ASCII art with specified color. Useful for dynamic color changes."""
+    try:
+        return image_to_ascii("CLI/assets/ascii_art.png", width=80, color=color)
+    except FileNotFoundError:
+        try:
+            with open("CLI/assets/simple_ascii-art.txt", "r") as file:
+                original_art = file.read()
+                # Apply the specified color
+                color_themes = {
+                    'red': Colors.RED,
+                    'green': Colors.GREEN,
+                    'blue': Colors.BLUE,
+                    'yellow': Colors.YELLOW,
+                    'magenta': Colors.MAGENTA,
+                    'cyan': Colors.CYAN,
+                    'white': Colors.WHITE,
+                    'bright_red': Colors.BRIGHT_RED,
+                    'bright_green': Colors.BRIGHT_GREEN,
+                    'bright_blue': Colors.BRIGHT_BLUE,
+                    'bright_yellow': Colors.BRIGHT_YELLOW,
+                    'bright_magenta': Colors.BRIGHT_MAGENTA,
+                    'bright_cyan': Colors.BRIGHT_CYAN,
+                    'bright_white': Colors.BRIGHT_WHITE,
+                }
+                
+                if color == 'rainbow':
+                    # For Textual rainbow effect, alternate colors per line
+                    lines = original_art.split('\n')
+                    rainbow_colors_textual = ["red", "yellow", "green", "cyan", "blue", "magenta"]
+                    colored_lines = []
+                    for i, line in enumerate(lines):
+                        textual_color = rainbow_colors_textual[i % len(rainbow_colors_textual)]
+                        colored_lines.append(f"[{textual_color}]{line}[/]")
+                    return '\n'.join(colored_lines)
+                elif color == 'fire':
+                    lines = original_art.split('\n') 
+                    fire_colors_textual = ["bright_red", "red", "yellow", "bright_yellow"]
+                    colored_lines = []
+                    for i, line in enumerate(lines):
+                        textual_color = fire_colors_textual[i % len(fire_colors_textual)]
+                        colored_lines.append(f"[{textual_color}]{line}[/]")
+                    return '\n'.join(colored_lines)
+                elif color == 'ocean':
+                    lines = original_art.split('\n')
+                    ocean_colors_textual = ["blue", "bright_blue", "cyan", "bright_cyan"] 
+                    colored_lines = []
+                    for i, line in enumerate(lines):
+                        textual_color = ocean_colors_textual[i % len(ocean_colors_textual)]
+                        colored_lines.append(f"[{textual_color}]{line}[/]")
+                    return '\n'.join(colored_lines)
+                elif color in color_themes:
+                    # Map to Textual color names
+                    textual_color_map = {
+                        'red': 'red', 'green': 'green', 'blue': 'blue', 'yellow': 'yellow',
+                        'magenta': 'magenta', 'cyan': 'cyan', 'white': 'white',
+                        'bright_red': 'bright_red', 'bright_green': 'bright_green', 
+                        'bright_blue': 'bright_blue', 'bright_yellow': 'bright_yellow',
+                        'bright_magenta': 'bright_magenta', 'bright_cyan': 'bright_cyan', 
+                        'bright_white': 'bright_white',
+                    }
+                    textual_color = textual_color_map.get(color, 'white')
+                    return f"[{textual_color}]{original_art}[/]"
+                else:
+                    return original_art  # Return original if color not found
+        except FileNotFoundError:
+            # Return fallback with color
+            fallback_art = r"""
+        ___            _ _       
+        | _|__ _ _ __ (_) |_ ___ 
+        | |/ _` | '_ \| | __/ _ \
+        | | (_| | | | | | ||  __/
+        |___\__, |_| |_|_|\__\___|
+            |___/                
+        """
+            textual_color_map = {
+                'red': 'red', 'green': 'green', 'blue': 'blue', 'yellow': 'yellow',
+                'magenta': 'magenta', 'cyan': 'cyan', 'white': 'white',
+                'bright_red': 'bright_red', 'bright_green': 'bright_green', 
+                'bright_blue': 'bright_blue', 'bright_yellow': 'bright_yellow',
+                'bright_magenta': 'bright_magenta', 'bright_cyan': 'bright_cyan', 
+                'bright_white': 'bright_white',
+            }
+            if color in textual_color_map:
+                textual_color = textual_color_map[color]
+                return f"[{textual_color}]{fallback_art}[/]"
+            elif color == 'rainbow':
+                lines = fallback_art.split('\n')
+                rainbow_colors = ["red", "yellow", "green", "cyan", "blue", "magenta"]
+                colored_lines = []
+                for i, line in enumerate(lines):
+                    textual_color = rainbow_colors[i % len(rainbow_colors)]
+                    colored_lines.append(f"[{textual_color}]{line}[/]")
+                return '\n'.join(colored_lines)
+            elif color == 'fire':
+                lines = fallback_art.split('\n')
+                fire_colors = ["bright_red", "red", "yellow", "bright_yellow"]
+                colored_lines = []
+                for i, line in enumerate(lines):
+                    textual_color = fire_colors[i % len(fire_colors)]
+                    colored_lines.append(f"[{textual_color}]{line}[/]")
+                return '\n'.join(colored_lines)
+            elif color == 'ocean':
+                lines = fallback_art.split('\n')
+                ocean_colors = ["blue", "bright_blue", "cyan", "bright_cyan"]
+                colored_lines = []
+                for i, line in enumerate(lines):
+                    textual_color = ocean_colors[i % len(ocean_colors)]
+                    colored_lines.append(f"[{textual_color}]{line}[/]")
+                return '\n'.join(colored_lines)
+            return fallback_art
 
 class MenuItem(Static):
     """A menu item with icon and shortcut key."""
@@ -128,7 +409,7 @@ class LoginScreen(Static):
             with Middle():
                 with Vertical():
                     # ASCII Art Logo
-                    yield Static(CUSTOM_ASCII_ART, classes="ascii-art")
+                    yield Static(OCEAN_ASCII_ART, classes="ascii-art")
                     
                     # Login form
                     
@@ -153,8 +434,8 @@ class MainMenuScreen(Static):
         with Center():
             with Middle():
                 with Vertical():
-                    # ASCII Art Logo (smaller)
-                    yield Static(CUSTOM_ASCII_ART, classes="ascii-art")
+                    # ASCII Art Logo (green for successful login)
+                    yield Static(SUCCESS_ASCII_ART, classes="ascii-art")
 
                     with Vertical(classes="main-content"):
                         with Center():
