@@ -6,7 +6,6 @@ from typing import Optional
 from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 import os
-import json
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 
