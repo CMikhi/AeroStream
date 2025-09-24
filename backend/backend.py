@@ -368,7 +368,7 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
         except ConnectionRefusedError as e:
             await websocket.send_json({
                 "type": "error", 
-                "message": f"Connection refused: {str(e)}"
+                "message": "You are already connected to this room from another device"
             })
             await websocket.close()
             return
