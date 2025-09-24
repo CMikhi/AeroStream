@@ -5,6 +5,7 @@ from textual.widgets import Static, Footer
 from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode
+from CLI.floating_island import FloatingCommandLine
 
 def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1.5, brightness_factor: float = 1.2, threshold: int = 150) -> str:
     """Convert an image to ASCII art with increased contrast and brightness, and remove surrounding whitespace.
@@ -73,47 +74,6 @@ class MenuItem(Static):
         return f"[bright_white]{self.icon}[/] [white]{self.label}[/]"
 
 
-class CommandLine(Static):
-    """A dedicated command line widget for handling text input display."""
-    
-    def __init__(self, **kwargs):
-        super().__init__("", **kwargs)
-        self.is_active = False
-        self.text_buffer = ""
-        self._current_content = ""
-    
-    def set_active(self, active: bool):
-        """Set the command line active state."""
-        self.is_active = active
-        if active:
-            self.add_class("active")
-            self.styles.display = "block"
-        else:
-            self.remove_class("active")
-            self.text_buffer = ""
-            self.styles.display = "none"
-        self._update_content()
-    
-    def update_buffer(self, text: str):
-        """Update the command line buffer text."""
-        self.text_buffer = text
-        self._update_content()
-    
-    def _update_content(self):
-        """Update the widget content."""
-        if self.is_active:
-            new_content = f":{self.text_buffer}█"
-        else:
-            new_content = ""
-        
-        # Only update if content has actually changed
-        if new_content != self._current_content:
-            self._current_content = new_content
-            self.update(new_content)
-            # Force a refresh of the entire screen to ensure visibility
-            if self.app:
-                self.app.refresh()
-
 
 class SplashScreen(Static):
     """The main splash screen container."""
@@ -136,12 +96,11 @@ class SplashScreen(Static):
                     # Version info at bottom
                     yield Static("https://homebred-irredeemably-madie.ngrok-free.dev/test\nrolling-4b0a60e", classes="version-info")
         
-        # Command line positioned at bottom left (outside the centered container)
-        yield CommandLine(id="command-line", classes="command-line")
+        # Floating command line island (positioned outside the main flow)
+        yield FloatingCommandLine(id="command-line", classes="floating-command-line hidden")
         
         # Footer with quick commands
         yield Footer()
-
 
 
 class AeroStream(App):
@@ -163,17 +122,20 @@ class AeroStream(App):
         Binding(key="t", action="recent", description="Recent Rooms"),
         Binding(key="c", action="settings", description="Settings"),
         Binding(key="colon", action="command_mode", description="Command mode"),
+        Binding(key="escape", action="escape_mode", description="Exit command mode"),
     ]
     
     CSS = """
     Screen {
         background: #1e1e2e;
         color: white;
+        layers: base overlay;
     }
     
     SplashScreen {
         height: 100%;
         width: 100%;
+        layer: base;
     }
     
     .main-container {
@@ -220,23 +182,33 @@ class AeroStream(App):
         margin-left: 0;
     }
     
-    .command-line {
-        color: #f9e2af;
+    /* Floating Command Line Island Styles */
+    .floating-command-line {
+        layer: overlay;
+        offset: 75% 15;
+        width: 70;
+        height: 5;
         background: #1e1e2e;
-        border: solid #fab387;
+        border: thick #fab387;
         text-align: left;
-        padding: 0 1;
-        height: 3;
-        width: 60;
-        dock: bottom;
+        padding: 1 2;
+        color: #f9e2af;
+        opacity: 0.95;
+    }
+    
+    .floating-command-line.active {
+        background: #313244;
+        border: thick #89b4fa;
+        color: #cdd6f4;
+        opacity: 1.0;
+    }
+    
+    .floating-command-line.hidden {
         display: none;
     }
     
-    .command-line.active {
-        display: block !important;
-        background: #313244;
-        border: solid #89b4fa;
-        color: #cdd6f4;
+    .floating-command-line.inactive {
+        visibility: hidden;
     }
     """
 
@@ -299,7 +271,7 @@ class AeroStream(App):
     def _on_mode_change(self, mode: KeyboardMode):
         """Handle keyboard mode changes."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
             command_line.set_active(mode == KeyboardMode.COMMAND)
         except Exception as e:
             # Command line widget not available yet, schedule for next tick
@@ -308,7 +280,7 @@ class AeroStream(App):
     def _delayed_mode_change(self, mode: KeyboardMode):
         """Handle delayed mode changes when widget isn't ready."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
             command_line.set_active(mode == KeyboardMode.COMMAND)
         except Exception:
             # Still not ready, ignore silently
@@ -317,7 +289,7 @@ class AeroStream(App):
     def _on_command_buffer_change(self, buffer: str):
         """Handle command buffer changes."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
             command_line.update_buffer(buffer)
         except Exception as e:
             # Widget not available, schedule for later
@@ -326,7 +298,7 @@ class AeroStream(App):
     def _delayed_buffer_change(self, buffer: str):
         """Handle delayed buffer changes."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
             command_line.update_buffer(buffer)
         except Exception:
             # Still not ready, ignore silently
@@ -447,6 +419,8 @@ class AeroStream(App):
 │    Enter - Execute command      Escape - Cancel                  │
 │    ↑/↓ - Command history        Backspace - Delete char         │
 │                                                                   │
+│  🏝️ Floating Command Island - Appears when you press ':'       │
+│                                                                   │
 ╰───────────────────────────────────────────────────────────────────╯
         """
         return help_text.strip()
@@ -460,6 +434,11 @@ class AeroStream(App):
         result = self._custom_help_command()
         if result:
             self.notify(result)
+    
+    def action_escape_mode(self) -> None:
+        """Handle escape key to exit command mode."""
+        if hasattr(self, 'keyboard_handler'):
+            self.keyboard_handler.handle_key("escape")
     
     def action_login(self) -> None:
         """Dummy action - KeyboardHandler handles this."""
@@ -489,7 +468,7 @@ class AeroStream(App):
         """Handle keyboard shortcuts using the KeyboardHandler."""
         
         # Keys that Textual bindings will handle (these will call dummy action methods)
-        textual_binding_keys = {"q", "question_mark", "l", "r", "p", "t", "c", "colon"}
+        textual_binding_keys = {"q", "question_mark", "l", "r", "p", "t", "c", "colon", "escape"}
         
         # Special handling for q and ? - only let Textual handle them in normal mode
         if event.key in {"q", "question_mark"}:
@@ -501,6 +480,13 @@ class AeroStream(App):
             # If we're in normal mode, let Textual handle them (help/quit actions)
             else:
                 return  # Let Textual's binding system handle it
+        
+        # Handle escape key specially
+        if event.key == "escape":
+            if self.keyboard_handler.mode == KeyboardMode.COMMAND:
+                self.keyboard_handler.handle_key("escape")
+                event.stop()
+                return
         
         # If this key has a Textual binding, let Textual handle it first (calls dummy method)
         # then let KeyboardHandler also process it for actual functionality
