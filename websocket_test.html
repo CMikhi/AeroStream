@@ -5,91 +5,359 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket Chat Test</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 900px;
             margin: 0 auto;
             padding: 20px;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            line-height: 1.6;
         }
+
+        h1 {
+            text-align: center;
+            color: #f1f5f9;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h3 {
+            color: #f8fafc;
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 0.5rem;
+        }
+
         .container {
-            border: 1px solid #ccc;
-            padding: 20px;
-            margin: 10px 0;
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
         }
+
+        .container:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 12px 40px rgba(59, 130, 246, 0.15);
+        }
+
         #messages {
             height: 400px;
-            border: 1px solid #ddd;
-            padding: 10px;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 16px;
             overflow-y: auto;
-            background-color: #f9f9f9;
-            margin: 10px 0;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            margin: 16px 0;
+            scrollbar-width: thin;
+            scrollbar-color: #3b82f6 #1e293b;
         }
+
+        #messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #messages::-webkit-scrollbar-track {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+
+        #messages::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 4px;
+        }
+
         .message {
-            margin: 5px 0;
-            padding: 5px;
-            border-radius: 5px;
+            margin: 8px 0;
+            padding: 12px 16px;
+            border-radius: 12px;
+            animation: fadeIn 0.3s ease-in;
+            word-wrap: break-word;
         }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         .my-message {
-            background-color: #e3f2fd;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
             text-align: right;
+            margin-left: 20%;
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
         }
+
         .other-message {
-            background-color: #fff;
+            background: rgba(71, 85, 105, 0.6);
+            color: #e2e8f0;
+            margin-right: 20%;
+            border: 1px solid #475569;
         }
+
         .system-message {
-            background-color: #f0f0f0;
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            color: #f1f5f9;
             font-style: italic;
             text-align: center;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin: 12px 10%;
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.2);
         }
-        input, button {
-            padding: 10px;
-            margin: 5px;
+
+        input, button, select {
+            padding: 12px 16px;
+            margin: 6px 4px;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            background: rgba(51, 65, 85, 0.8);
+            color: #e2e8f0;
+            font-size: 14px;
+            transition: all 0.3s ease;
         }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            background: rgba(51, 65, 85, 1);
+        }
+
+        input::placeholder {
+            color: #94a3b8;
+        }
+
         #messageInput {
-            width: 70%;
+            width: calc(70% - 8px);
+            background: rgba(51, 65, 85, 0.9);
         }
+
+        button {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 12px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+        }
+
+        button:hover {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .register-btn {
+            background: linear-gradient(135deg, #10b981, #059669) !important;
+        }
+
+        .register-btn:hover {
+            background: linear-gradient(135deg, #059669, #047857) !important;
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .logout-btn {
+            background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+        }
+
+        .logout-btn:hover {
+            background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.3);
+        }
+
         .status {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
+            padding: 16px;
+            margin: 16px 0;
+            border-radius: 10px;
+            font-weight: 500;
+            text-align: center;
+            font-size: 14px;
+            transition: all 0.3s ease;
         }
+
         .connected {
-            background-color: #d4edda;
-            color: #155724;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: 1px solid #10b981;
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.2);
         }
+
         .disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            border: 1px solid #ef4444;
+            box-shadow: 0 4px 16px rgba(239, 68, 68, 0.2);
+        }
+
+        #token {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        #roomStatus {
+            margin-top: 12px;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #94a3b8;
+            margin: 8px 0;
+            font-style: italic;
+        }
+
+        form {
+            margin: 0;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            .container {
+                padding: 16px;
+                margin: 12px 0;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            #messageInput {
+                width: 100%;
+                margin-bottom: 8px;
+            }
+
+            .my-message {
+                margin-left: 10%;
+            }
+
+            .other-message {
+                margin-right: 10%;
+            }
+
+            button {
+                width: 100%;
+                margin: 4px 0;
+            }
+
+            input {
+                width: 100%;
+                margin: 4px 0;
+            }
+        }
+
+        /* Glowing effect for active elements */
+        .glow {
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 5px #3b82f6; }
+            to { box-shadow: 0 0 20px #3b82f6, 0 0 30px #3b82f6; }
+        }
+
+        /* Pulse animation for connection status */
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
         }
     </style>
 </head>
 <body>
-    <h1>WebSocket Chat Test</h1>
+    <h1>🚀 WebSocket Chat</h1>
     
     <div class="container">
-        <h3>Authentication</h3>
+        <h3>🔐 Authentication</h3>
         <form onsubmit="return false;">
-            <input type="text" id="username" placeholder="Username" value="testuser">
-            <input type="password" id="password" placeholder="Password" value="testpass">
+            <input type="text" id="username" placeholder="Enter username">
+            <input type="password" id="password" placeholder="Enter password">
             <button type="button" onclick="login()">Login</button>
-            <button type="button" onclick="logout()" style="background-color: #dc3545; color: white;">Logout</button>
+            <button type="button" class="register-btn" onclick="register()">Register</button>
+            <button type="button" class="logout-btn" onclick="logout()">Logout</button>
         </form>
-        <div id="token" style="margin-top: 10px; word-break: break-all;"></div>
+        <div class="help-text">
+            💡 New user? Click "Register" to create an account, then "Login" to access the chat.
+        </div>
+        <div id="token"></div>
     </div>
 
     <div class="container">
-        <h3>Room Management</h3>
+        <h3>🏠 Room Management</h3>
         <form onsubmit="return false;">
             <input type="text" id="newRoomName" placeholder="New room name">
+            <select id="roomType" onchange="togglePasswordInput()">
+                <option value="public" selected>🌍 Public</option>
+                <option value="private">🔒 Private</option>
+            </select>
+            <input type="password" id="roomPassword" placeholder="Room password" style="display: none; margin-top: 10px;">
             <button type="button" onclick="createRoom()">Create Room</button>
         </form>
-        <div id="roomStatus" style="margin-top: 10px;"></div>
+        <div id="roomStatus"></div>
     </div>
 
+    <script>
+        function togglePasswordInput() {
+            const roomType = document.getElementById('roomType').value;
+            const passwordInput = document.getElementById('roomPassword');
+            if (roomType === 'private') {
+                passwordInput.style.display = 'block';
+            } else {
+                passwordInput.style.display = 'none';
+            }
+        }
+    </script>
+
     <div class="container">
-        <h3>WebSocket Connection</h3>
+        <h3>🔌 WebSocket Connection</h3>
         <form onsubmit="return false;">
             <input type="text" id="roomName" placeholder="Room name" value="general">
+            <input type="password" id="joinRoomPassword" placeholder="Password (for private rooms)">
+            <div class="help-text">
+                🔓 Leave password empty for public rooms. Enter password for private rooms.
+            </div>
             <button type="button" onclick="connect()">Connect to Room</button>
             <button type="button" onclick="disconnect()">Disconnect</button>
         </form>
@@ -97,7 +365,7 @@
     </div>
 
     <div class="container">
-        <h3>Chat</h3>
+        <h3>💬 Chat</h3>
         <div id="messages"></div>
         <form onsubmit="return false;">
             <input type="text" id="messageInput" placeholder="Type your message...">
@@ -128,6 +396,11 @@
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             
+            if (!username || !password) {
+                addMessage('system', 'Please enter both username and password');
+                return;
+            }
+            
             try {
                 const response = await fetch(`${baseUrl}/login`, {
                     method: 'POST',
@@ -141,15 +414,46 @@
                 if (response.ok) {
                     const data = await response.json();
                     token = data.access_token;
-                    document.getElementById('token').innerHTML = `<strong>Token:</strong> ${token}`;
+                    document.getElementById('token').innerHTML = `<strong>🎫 Token:</strong> ${token}`;
                     saveLoginState(); // Save login state to localStorage
-                    addMessage('system', 'Login successful!');
+                    addMessage('system', '✅ Login successful!');
                 } else {
                     const error = await response.json();
-                    addMessage('system', `Login failed: ${error.detail}`);
+                    addMessage('system', `❌ Login failed: ${error.detail}`);
                 }
             } catch (error) {
-                addMessage('system', `Login error: ${error.message}`);
+                addMessage('system', `❌ Login error: ${error.message}`);
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                addMessage('system', 'Please enter both username and password');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${baseUrl}/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addMessage('system', '✅ Registration successful! You can now login.');
+                } else {
+                    const error = await response.json();
+                    addMessage('system', `❌ Registration failed: ${error.detail}`);
+                }
+            } catch (error) {
+                addMessage('system', `❌ Registration error: ${error.message}`);
             }
         }
 
@@ -171,63 +475,102 @@
             document.getElementById('roomStatus').innerHTML = '';
             document.getElementById('messages').innerHTML = '';
             
-            addMessage('system', 'Logged out successfully');
+            addMessage('system', '👋 Logged out successfully');
         }
 
         async function createRoom() {
             if (!token) {
-                document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please login first</span>';
-                return;
+            document.getElementById('roomStatus').innerHTML = '<span style="color: #ef4444;">Please login first</span>';
+            return;
             }
 
             const roomName = document.getElementById('newRoomName').value.trim();
+            const roomType = document.getElementById('roomType').value;
+            const roomPassword = document.getElementById('roomPassword').value.trim();
+
             if (!roomName) {
-                document.getElementById('roomStatus').innerHTML = '<span style="color: red;">Please enter a room name</span>';
-                return;
+            document.getElementById('roomStatus').innerHTML = '<span style="color: #ef4444;">Please enter a room name</span>';
+            return;
+            }
+
+            const roomData = { room_name: roomName };
+            if (roomType === 'private') {
+                roomData.private = true;
+                roomData.password = roomPassword;
             }
 
             try {
-                const response = await fetch(`${baseUrl}/create_room`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ room_name: roomName })
-                });
+            const response = await fetch(`${baseUrl}/create_room`, {
+                method: 'POST',
+                headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(roomData)
+            });
 
-                if (response.ok) {
-                    const data = await response.json();
-                    document.getElementById('roomStatus').innerHTML = `<span style="color: green;">${data.message}</span>`;
-                    document.getElementById('roomName').value = roomName; // Auto-fill the connect room field
-                    document.getElementById('newRoomName').value = ''; // Clear the input
-                    addMessage('system', `Room '${roomName}' created successfully!`);
-                } else {
-                    const error = await response.json();
-                    document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Failed to create room: ${error.detail}</span>`;
-                }
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById('roomStatus').innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
+                document.getElementById('roomName').value = roomName; // Auto-fill the connect room field
+                document.getElementById('newRoomName').value = ''; // Clear the input
+                document.getElementById('roomPassword').value = ''; // Clear the password input
+                addMessage('system', `🏠 Room '${roomName}' created successfully!`);
+            } else {
+                const error = await response.json();
+                document.getElementById('roomStatus').innerHTML = `<span style="color: #ef4444;">❌ Failed to create room: ${error.detail}</span>`;
+            }
             } catch (error) {
-                document.getElementById('roomStatus').innerHTML = `<span style="color: red;">Error creating room: ${error.message}</span>`;
+            document.getElementById('roomStatus').innerHTML = `<span style="color: #ef4444;">❌ Error creating room: ${error.message}</span>`;
             }
         }
 
-        function connect() {
+        async function connect() {
             if (!token) {
                 addMessage('system', 'Please login first');
                 return;
             }
 
             const roomName = document.getElementById('roomName').value;
+            const roomPassword = document.getElementById('joinRoomPassword').value;
+            
             if (!roomName) {
                 addMessage('system', 'Please enter a room name');
                 return;
             }
 
             try {
+                // First, attempt to join the room via API to validate password
+                const joinData = { room_name: roomName };
+                if (roomPassword) {
+                    joinData.password = roomPassword;
+                }
+
+                const joinResponse = await fetch(`${baseUrl}/join_room`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(joinData)
+                });
+
+                if (!joinResponse.ok) {
+                    const error = await joinResponse.json();
+                    addMessage('system', `❌ Failed to join room: ${error.detail}`);
+                    return;
+                }
+
+                // If join was successful, proceed with WebSocket connection
+                addMessage('system', '🔓 Room access granted, connecting...');
+                document.getElementById('status').className = 'status disconnected pulse';
+                document.getElementById('status').textContent = 'Connecting...';
+
                 ws = new WebSocket(`${wsBaseUrl}/ws/${roomName}`);
                 
                 ws.onopen = function() {
                     console.log('WebSocket opened');
+                    document.getElementById('status').textContent = 'Authenticating...';
                     // Send authentication
                     ws.send(JSON.stringify({
                         type: 'auth',
@@ -244,7 +587,7 @@
                         console.log('Message handling completed successfully');
                     } catch (error) {
                         console.error('Error parsing WebSocket message:', error);
-                        addMessage('system', `Error parsing message: ${error.message}`);
+                        addMessage('system', `❌ Error parsing message: ${error.message}`);
                     }
                 };
 
@@ -253,16 +596,16 @@
                     console.log('Close event details:', event);
                     document.getElementById('status').className = 'status disconnected';
                     document.getElementById('status').textContent = 'Disconnected';
-                    addMessage('system', `WebSocket connection closed (Code: ${event.code})`);
+                    addMessage('system', `🔌 WebSocket connection closed (Code: ${event.code})`);
                 };
 
                 ws.onerror = function(error) {
                     console.error('WebSocket error:', error);
-                    addMessage('system', `WebSocket error: ${error.message || 'Unknown error'}`);
+                    addMessage('system', `❌ WebSocket error: ${error.message || 'Unknown error'}`);
                 };
 
             } catch (error) {
-                addMessage('system', `Connection error: ${error.message}`);
+                addMessage('system', `❌ Connection error: ${error.message}`);
             }
         }
 
@@ -284,8 +627,8 @@
                         currentUser = data.user;
                         currentRoom = data.room;
                         document.getElementById('status').className = 'status connected';
-                        document.getElementById('status').textContent = `Connected to ${currentRoom} as ${currentUser.username}`;
-                        addMessage('system', `Connected to room: ${currentRoom}`);
+                        document.getElementById('status').textContent = `🟢 Connected to ${currentRoom} as ${currentUser.username}`;
+                        addMessage('system', `🎉 Connected to room: ${currentRoom}`);
                         break;
 
                     case 'message_history':
@@ -322,12 +665,43 @@
                     case 'user_joined':
                     case 'user_left':
                         if (data.data && data.data.message) {
-                            addMessage('system', data.data.message);
+                            addMessage('system', `👥 ${data.data.message}`);
                         }
                         break;
 
+                    case 'connection_replaced':
+                        addMessage('system', `🔄 Connection replaced: ${data.message || 'Your connection was replaced by a new one'}`);
+                        // Close current connection gracefully
+                        if (ws) {
+                            ws.close();
+                            ws = null;
+                        }
+                        document.getElementById('status').className = 'status disconnected';
+                        document.getElementById('status').textContent = 'Disconnected (Connection Replaced)';
+                        break;
+
+                    case 'force_disconnect':
+                        addMessage('system', `⚠️ Forced disconnect: ${data.message || 'Disconnected by server'}`);
+                        // Close current connection gracefully
+                        if (ws) {
+                            ws.close();
+                            ws = null;
+                        }
+                        document.getElementById('status').className = 'status disconnected';
+                        document.getElementById('status').textContent = 'Disconnected (Forced)';
+                        break;
+
                     case 'error':
-                        addMessage('system', `Error: ${data.message || 'Unknown error'}`);
+                        const errorMessage = data.message || 'Unknown error';
+                        addMessage('system', `❌ Error: ${errorMessage}`);
+                        
+                        // Handle specific error types
+                        if (errorMessage.includes('Connection refused') || errorMessage.includes('already connected')) {
+                            addMessage('system', '⚠️ You are already connected to this room from another tab or device.');
+                            // Don't try to reconnect automatically for this type of error
+                            document.getElementById('status').className = 'status disconnected';
+                            document.getElementById('status').textContent = 'Connection Refused (Already Connected)';
+                        }
                         break;
 
                     case 'pong':
@@ -349,7 +723,7 @@
                 
             } catch (error) {
                 console.error('Error handling WebSocket message:', error);
-                addMessage('system', `Error processing message: ${error.message}`);
+                addMessage('system', `❌ Error processing message: ${error.message}`);
                 console.log('=== HANDLE MESSAGE ERROR ===');
             }
         }
@@ -364,7 +738,7 @@
             console.log('WebSocket ready states: CONNECTING=0, OPEN=1, CLOSING=2, CLOSED=3');
             
             if (!ws || ws.readyState !== WebSocket.OPEN) {
-                addMessage('system', 'Not connected to WebSocket');
+                addMessage('system', '❌ Not connected to WebSocket');
                 console.log('WebSocket not connected or not open');
                 return;
             }
@@ -400,7 +774,7 @@
                 
             } catch (error) {
                 console.error('Error sending message:', error);
-                addMessage('system', `Error sending message: ${error.message}`);
+                addMessage('system', `❌ Error sending message: ${error.message}`);
                 console.log('=== SEND MESSAGE ERROR ===');
             }
         }
@@ -438,8 +812,8 @@
             if (savedToken && savedUsername) {
                 token = savedToken;
                 document.getElementById('username').value = savedUsername;
-                document.getElementById('token').innerHTML = `<strong>Token:</strong> ${token}`;
-                addMessage('system', 'Restored login session');
+                document.getElementById('token').innerHTML = `<strong>🎫 Token:</strong> ${token}`;
+                addMessage('system', '🔄 Restored login session');
                 return true;
             }
             return false;
@@ -473,7 +847,7 @@
                     login();
                 } else if (e.target.id === 'newRoomName') {
                     createRoom();
-                } else if (e.target.id === 'roomName') {
+                } else if (e.target.id === 'roomName' || e.target.id === 'joinRoomPassword') {
                     connect();
                 }
             }
@@ -487,13 +861,13 @@
         // Global error handler to catch any unhandled errors that might close WebSocket
         window.addEventListener('error', function(event) {
             console.error('Global error caught:', event.error);
-            addMessage('system', `JavaScript error: ${event.error?.message || 'Unknown error'}`);
+            addMessage('system', `❌ JavaScript error: ${event.error?.message || 'Unknown error'}`);
         });
 
         // Handle unhandled promise rejections
         window.addEventListener('unhandledrejection', function(event) {
             console.error('Unhandled promise rejection:', event.reason);
-            addMessage('system', `Promise rejection: ${event.reason?.message || 'Unknown error'}`);
+            addMessage('system', `❌ Promise rejection: ${event.reason?.message || 'Unknown error'}`);
         });
 
         // Send ping every 30 seconds to keep connection alive

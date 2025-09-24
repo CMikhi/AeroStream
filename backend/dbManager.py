@@ -60,6 +60,8 @@ class DatabaseManager:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             room_key TEXT NOT NULL UNIQUE,
             created_by INTEGER,
+            private BOOLEAN NOT NULL DEFAULT FALSE,
+            password TEXT CHECK(private != FALSE OR password IS NULL),
             FOREIGN KEY (created_by) REFERENCES users (id)
         );
         """
