@@ -1,10 +1,10 @@
 # IgniteDemoRepo
 
-IgniteDemoRepo is a terminal-based messaging application built for the **Ignite Professional Studies Technology** program. It provides a modern TUI (Text User Interface) experience for messaging, leveraging robust Python frameworks for both the frontend and backend.
+IgniteDemoRepo is a terminal-based messaging application built for the **Ignite Professional Studies Technology** program. It provides a modern TUI (Text User Interface) experience for messaging, leveraging Textual for the frontend and FastAPI for the backend
 
 ## Features
 
-- **Terminal-Based TUI**: Built with [Textualize](https://github.com/Textualize/textual), offering an interactive, responsive, and visually appealing messaging interface directly in your terminal.
+- **Terminal-Based TUI**: Built with [Textual](https://github.com/Textualize/textual), offering an interactive, responsive, and visually appealing messaging interface directly in your terminal.
 - **FastAPI Backend**: Handles all messaging logic and user management, providing fast and reliable REST and WebSocket endpoints.
 - **Real-Time Messaging**: Communication between the TUI and backend is powered by both REST APIs for data retrieval and WebSockets for instant, two-way message delivery.
 - **User Authentication**: Uses `bcryt` to hash passwords at rest and compare incoming password requests against hash. Furthermore, we use JWT tokens for role-based authentication and endpoint security. 
