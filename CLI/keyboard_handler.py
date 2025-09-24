@@ -195,7 +195,7 @@ class KeyboardHandler:
         if command_name in self.commands:
             try:
                 command = self.commands[command_name]
-                result = command.handler(*args) if args else command.handler()
+                result = command.handler(*args)
                 self._notify_command_executed(command_text, result)
             except Exception as e:
                 self._notify_error(f"Error executing '{command_text}': {str(e)}")
