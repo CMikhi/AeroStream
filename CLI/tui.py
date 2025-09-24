@@ -1,9 +1,9 @@
 from textual.app import App, ComposeResult
 from textual.containers import Center, Middle, Vertical
 from textual.widgets import Static
-from textual.css.query import NoMatches
 from PIL import Image
 from PIL import ImageEnhance
+from keyboard_handler import KeyboardHandler, KeyboardMode
 
 def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1.5, brightness_factor: float = 1.2, threshold: int = 150) -> str:
     """Convert an image to ASCII art with increased contrast and brightness, and remove surrounding whitespace.
@@ -92,6 +92,9 @@ class SplashScreen(Static):
                     
                     # Version info at bottom
                     yield Static("https://homebred-irredeemably-madie.ngrok-free.dev/test\nrolling-4b0a60e", classes="version-info")
+                    
+                    # Command line (initially hidden)
+                    yield Static("", id="command-line", classes="command-line")
 
 
 class LunarVimApp(App):
@@ -151,25 +154,119 @@ class LunarVimApp(App):
         margin-top: 2;
         margin-left: 0;
     }
+    
+    .command-line {
+        color: #f9e2af;
+        background: #313244;
+        text-align: left;
+        margin-top: 2;
+        padding: 0 1;
+        height: 1;
+        display: none;
+    }
+    
+    .command-line.active {
+        display: block;
+    }
     """
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.keyboard_handler = KeyboardHandler(self)
+        self._setup_keyboard_callbacks()
+        self._register_custom_commands()
+    
+    def _setup_keyboard_callbacks(self):
+        """Set up callbacks for keyboard handler events."""
+        self.keyboard_handler.on_mode_change = self._on_mode_change
+        self.keyboard_handler.on_command_buffer_change = self._on_command_buffer_change
+        self.keyboard_handler.on_command_executed = self._on_command_executed
+        self.keyboard_handler.on_error = self._on_error
+    
+    def _register_custom_commands(self):
+        """Register application-specific commands."""
+        # Menu navigation commands
+        self.keyboard_handler.register_command("login", self._login_command, "Go to login screen", ["l"])
+        self.keyboard_handler.register_command("register", self._register_command, "Go to register screen", ["r", "reg"])
+        self.keyboard_handler.register_command("rooms", self._rooms_command, "Go to rooms screen", ["p"])
+        self.keyboard_handler.register_command("recent", self._recent_command, "Go to recent rooms screen", ["t"])
+        self.keyboard_handler.register_command("settings", self._settings_command, "Go to settings screen", ["s", "config"])
+        
+        # Register single-key commands for quick access
+        self.keyboard_handler.register_single_key("l", self._login_command)
+        self.keyboard_handler.register_single_key("r", self._register_command)
+        self.keyboard_handler.register_single_key("p", self._rooms_command)
+        self.keyboard_handler.register_single_key("t", self._recent_command)
+        self.keyboard_handler.register_single_key("s", self._settings_command)
+    
+    def _on_mode_change(self, mode: KeyboardMode):
+        """Handle keyboard mode changes."""
+        try:
+            command_line = self.query_one("#command-line", Static)
+            if mode == KeyboardMode.COMMAND:
+                command_line.add_class("active")
+                command_line.update(":")
+            else:
+                command_line.remove_class("active")
+                command_line.update("")
+        except Exception:
+            # Command line widget not available yet
+            pass
+    
+    def _on_command_buffer_change(self, buffer: str):
+        """Handle command buffer changes."""
+        try:
+            command_line = self.query_one("#command-line", Static)
+            command_line.update(f":{buffer}")
+        except Exception:
+            # Command line widget not available yet
+            pass
+    
+    def _on_command_executed(self, command: str, result):
+        """Handle command execution."""
+        if result and isinstance(result, str):
+            self.notify(result)
+        else:
+            self.notify(f"Executed: {command}")
+    
+    def _on_error(self, error: str):
+        """Handle errors from keyboard handler."""
+        self.notify(error, severity="error")
+    
+    # Command handlers
+    def _login_command(self):
+        """Handle login command."""
+        self.notify("Selected: Login")
+    
+    def _register_command(self):
+        """Handle register command."""
+        self.notify("Selected: Register")
+    
+    def _rooms_command(self):
+        """Handle rooms command."""
+        self.notify("Selected: Rooms")
+    
+    def _recent_command(self):
+        """Handle recent rooms command."""
+        self.notify("Selected: Recent Rooms")
+    
+    def _settings_command(self):
+        """Handle settings command."""
+        self.notify("Selected: Settings")
     
     def compose(self) -> ComposeResult:
         yield SplashScreen()
     
     def on_key(self, event) -> None:
-        """Handle keyboard shortcuts."""
-        key_map = {
-            "l": "Login",
-            "r": "Register", 
-            "p": "Rooms",
-            "t": "Recent Rooms",
-            "s": "Settings"
-        }
+        """Handle keyboard shortcuts using the KeyboardHandler."""
+        # Let the keyboard handler process the key
+        handled = self.keyboard_handler.handle_key(event.key)
         
-        if event.key in key_map:
-            self.notify(f"Selected: {key_map[event.key]}")
-        elif event.key == "q" or event.key == "escape":
-            self.exit()
+        # If not handled, we could add fallback behavior here
+        if not handled:
+            # For debugging purposes, you can uncomment the next line
+            self.notify(f"Unhandled key: {event.key}")
+            pass
 
 
 if __name__ == "__main__":
