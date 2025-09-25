@@ -9,9 +9,6 @@ from floating_island import FloatingCommandLine, FloatingResultPanel
 from api import IgniteAPIClient
 
 client = IgniteAPIClient()
-from api import IgniteAPIClient
-
-client = IgniteAPIClient()
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -1047,8 +1044,6 @@ Colon Commands (press : then type):
     def compose(self) -> ComposeResult:
         self.splash_screen = SplashScreen()
         yield self.splash_screen
-        self.splash_screen = SplashScreen()
-        yield self.splash_screen
         # Connect the floating panels after composition
         self.call_after_refresh(self._connect_floating_panels)
 
@@ -1233,132 +1228,7 @@ Colon Commands (press : then type):
     def _handle_login_success(self, username: str):
         """Handle successful login on main thread."""
         try:
-            # Show progress indicator
-            self.notify("Logging in...", severity="information")
-            
-            # Perform login in background to avoid blocking UI
-            from functools import partial
-            self.run_worker(partial(self._perform_login, username, password))
-            
-        except Exception as e:
-            # Unexpected error (UI elements not found, etc.)
-            self.notify("An unexpected error occurred during login", severity="error")
-            self.notify(str(e), severity="error")
-    
-    async def _perform_login(self, username: str, password: str):
-        """Worker function for background login."""
-        try:
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 10  # 10 second timeout
-            
-            login_result = client.login(username, password)
-            
-            # Reset timeout
-            if old_timeout:
-                client.session.timeout = old_timeout
-            
-            # Check if login was successful and call handler
-            if client.is_authenticated():
-                self._handle_login_success(username)
-            else:
-                self._handle_login_failure("Invalid username or password")
-            
-        except Exception as e:
-            # Reset timeout
-            try:
-                if old_timeout:
-                    client.session.timeout = old_timeout
-            except:
-                pass
-            
-            # Handle error
-            self._handle_login_error(str(e))
-    
-    async def _perform_registration(self, username: str, password: str):
-        """Worker function for background registration."""
-        try:
-            self.notify("Connecting to server...", severity="information")
-            
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 5  # Shorter timeout for faster failure
-            
-            self.notify("Sending registration request...", severity="information")
-            register_result = client.register(username, password)
-            
-            self.notify(f"Registration result: {register_result}", severity="information")
-            
-            # Reset timeout
-            if old_timeout:
-                client.session.timeout = old_timeout
-            
-            # Check if registration was successful
-            if register_result and 'error' not in register_result:
-                # Handle successful registration
-                self._handle_register_success(username)
-            else:
-                # Handle registration failure
-                error_msg = register_result.get('error', 'Registration failed') if register_result else 'Registration failed'
-                self._handle_register_error(error_msg)
-            
-        except Exception as e:
-            self.notify(f"Registration exception: {str(e)}", severity="error")
-            
-            # Reset timeout
-            try:
-                if old_timeout:
-                    client.session.timeout = old_timeout
-            except:
-                pass
-            
-            # Handle error
-            self._handle_register_error(str(e))
-    
-    def _login_worker(self, username: str, password: str):
-        """Background worker for login to prevent UI blocking."""
-        try:
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 10  # 10 second timeout
-            
-            login_result = client.login(username, password)
-            
-            # Reset timeout
-            if old_timeout:
-                client.session.timeout = old_timeout
-            
-            # Check if login was successful
-            if client.is_authenticated():
-                # Schedule success handling on main thread
-                self.call_from_thread(self._handle_login_success, username)
-            else:
-                # Schedule failure handling on main thread
-                self.call_from_thread(self._handle_login_failure, "Invalid username or password")
-            
-        except Exception as e:
-            # Reset timeout
-            try:
-                if old_timeout:
-                    client.session.timeout = old_timeout
-            except:
-                pass
-            
-            # Schedule error handling on main thread
-            self.call_from_thread(self._handle_login_error, str(e))
-    
-    def _handle_login_success(self, username: str):
-        """Handle successful login on main thread."""
-        try:
             self.is_authenticated = True
-            
-            # Get reference to splash screen and switch to main menu
-            if not self.splash_screen:
-                self.splash_screen = self.query_one(SplashScreen)
-            
             
             # Get reference to splash screen and switch to main menu
             if not self.splash_screen:
@@ -1369,40 +1239,7 @@ Colon Commands (press : then type):
             
         except Exception as e:
             self.notify("Login succeeded but UI update failed", severity="warning")
-            self.notify("Login succeeded but UI update failed", severity="warning")
             self.notify(str(e), severity="error")
-    
-    def _handle_login_failure(self, error_message: str):
-        """Handle login failure on main thread."""
-        try:
-            password_input = self.query_one("#password-input")
-            
-            self.notify(error_message, severity="error")
-            # Clear password field for security
-            password_input.value = ""
-            
-        except Exception as e:
-            self.notify("Login failed and UI update failed", severity="error")
-    
-    def _handle_login_error(self, error_message: str):
-        """Handle login errors on main thread."""
-        try:
-            password_input = self.query_one("#password-input")
-            
-            if any(word in error_message.lower() for word in ["timeout", "network", "connection", "failed to establish"]):
-                self.notify("Login failed. Please check your connection and try again.", severity="error")
-            elif "401" in error_message or "unauthorized" in error_message.lower():
-                self.notify("Invalid username or password", severity="error")
-            else:
-                self.notify("Login failed. Please try again.", severity="error")
-                self.notify(error_message, severity="error")
-            
-            # Clear password field for security
-            password_input.value = ""
-            
-        except Exception as e:
-            self.notify("Login failed and UI update failed", severity="error")
-
     
     def _handle_login_failure(self, error_message: str):
         """Handle login failure on main thread."""
@@ -1443,65 +1280,11 @@ Colon Commands (press : then type):
             
             username = str(username_input.value).strip()
             password = str(password_input.value).strip()
-            username = str(username_input.value).strip()
-            password = str(password_input.value).strip()
             
             if not username or not password:
                 self.notify("Please enter both username and password", severity="error")
                 return
             
-            # Validate password length (backend requires at least 6 characters)
-            if len(password) < 6:
-                self.notify("Password must be at least 6 characters long", severity="error")
-                return
-            
-            # Show progress indicator
-            self.notify("Creating account...", severity="information")
-            
-            # Perform registration in background to avoid blocking UI
-            from functools import partial
-            self.run_worker(partial(self._perform_registration, username, password))
-            
-        except Exception as e:
-            # Unexpected error (UI elements not found, etc.)
-            self.notify("An unexpected error occurred during registration", severity="error")
-            self.notify(str(e), severity="error")
-    
-    def _register_worker(self, username: str, password: str):
-        """Background worker for registration to prevent UI blocking."""
-        try:
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 10  # 10 second timeout
-            
-            register_result = client.register(username, password)
-            
-            # Reset timeout
-            if old_timeout:
-                client.session.timeout = old_timeout
-            
-            # Schedule UI updates on main thread
-            self.call_from_thread(self._handle_register_success, username)
-            
-        except Exception as e:
-            # Reset timeout
-            try:
-                if old_timeout:
-                    client.session.timeout = old_timeout
-            except:
-                pass
-            
-            # Schedule error handling on main thread
-            self.call_from_thread(self._handle_register_error, str(e))
-    
-    def _handle_register_success(self, username: str):
-        """Handle successful registration on main thread."""
-        try:
-            username_input = self.query_one("#username-input")
-            password_input = self.query_one("#password-input")
-            
-            # Registration successful
             # Validate password length (backend requires at least 6 characters)
             if len(password) < 6:
                 self.notify("Password must be at least 6 characters long", severity="error")
@@ -1563,45 +1346,7 @@ Colon Commands (press : then type):
             # Focus on username field for login
             username_input.focus()
             
-            # Clear both fields after successful registration
-            username_input.value = ""
-            password_input.value = ""
-            
-            # Focus on username field for login
-            username_input.focus()
-            
         except Exception as e:
-            self.notify("Registration succeeded but UI update failed", severity="warning")
-    
-    def _handle_register_error(self, error_message: str):
-        """Handle registration errors on main thread."""
-        try:
-            username_input = self.query_one("#username-input")
-            password_input = self.query_one("#password-input")
-            
-            if "Username already taken" in error_message or "already taken" in error_message:
-                self.notify("Username already exists. Please choose a different username.", severity="error")
-                # Clear username field so user can try a different one
-                username_input.value = ""
-                username_input.focus()
-            elif "Password must be at least 6 characters" in error_message:
-                self.notify("Password must be at least 6 characters long", severity="error")
-                # Clear password field
-                password_input.value = ""
-                password_input.focus()
-            elif any(word in error_message.lower() for word in ["timeout", "network", "connection", "failed to establish"]):
-                self.notify("Registration failed. Please check your connection and try again.", severity="error")
-            elif "400" in error_message:
-                self.notify("Invalid registration data. Please check your input.", severity="error")
-            else:
-                self.notify("Registration failed. Please try again.", severity="error")
-                self.notify(error_message, severity="error")
-            
-            # Clear password field for security in all error cases
-            password_input.value = ""
-            
-        except Exception as e:
-            self.notify("Registration failed and UI update failed", severity="error")
             self.notify("Registration succeeded but UI update failed", severity="warning")
     
     def _handle_register_error(self, error_message: str):
