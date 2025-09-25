@@ -155,7 +155,7 @@ def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1
                     colored_lines.append(f"[{textual_color}]{line}[/]")
                 elif color == 'ocean':
                     # Ocean effect using Textual colors
-                    ocean_colors_textual = ["blue", "bright_blue", "cyan", "bright_cyan"]
+                    ocean_colors_textual = ["blue", "green", "cyan", "bright_cyan"]
                     textual_color = ocean_colors_textual[line_num % len(ocean_colors_textual)]
                     colored_lines.append(f"[{textual_color}]{line}[/]")
                 elif color in color_themes:
@@ -220,8 +220,10 @@ try:
     OCEAN_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="ocean")
     
     # Green for success/login contexts
-    SUCCESS_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="bright_green")
-    
+    SUCCESS_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=90, color="bright_green")
+
+    ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="cyan")
+
 except FileNotFoundError:
     # Use the main ASCII art as fallbacks
     RAINBOW_ASCII_ART = CUSTOM_ASCII_ART
@@ -266,7 +268,7 @@ def get_colored_ascii_art(color: str = "bright_cyan") -> str:
                     return '\n'.join(colored_lines)
                 elif color == 'fire':
                     lines = original_art.split('\n') 
-                    fire_colors_textual = ["bright_red", "red", "yellow", "bright_yellow"]
+                    fire_colors_textual = ["red", "orange", "yellow", "red"]
                     colored_lines = []
                     for i, line in enumerate(lines):
                         textual_color = fire_colors_textual[i % len(fire_colors_textual)]
@@ -325,7 +327,7 @@ def get_colored_ascii_art(color: str = "bright_cyan") -> str:
                 return '\n'.join(colored_lines)
             elif color == 'fire':
                 lines = fallback_art.split('\n')
-                fire_colors = ["bright_red", "red", "yellow", "bright_yellow"]
+                fire_colors = ["red", "orange", "yellow", "red"]
                 colored_lines = []
                 for i, line in enumerate(lines):
                     textual_color = fire_colors[i % len(fire_colors)]
@@ -409,7 +411,7 @@ class LoginScreen(Static):
             with Middle():
                 with Vertical():
                     # ASCII Art Logo
-                    yield Static(OCEAN_ASCII_ART, classes="ascii-art")
+                    yield Static(SUCCESS_ASCII_ART, classes="ascii-art")
                     
                     # Login form
                     
