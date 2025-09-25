@@ -748,7 +748,26 @@ class RoomChatScreen(Screen):
             self.main_content.mount(Static("No messages yet. Start the conversation!", classes="info-message"))
         else:
             for msg in recent_messages:
-                self.main_content.mount(Static(msg, classes="chat-message"))
+                # Format message based on whether it's from current user
+                if ": " in msg:
+                    username, message_text = msg.split(": ", 1)
+                    is_self = username == self.username
+                    
+                    if is_self:
+                        # Current user's messages on the right - wrap in container
+                        formatted_msg = f"{message_text}"
+                        message_widget = Static(formatted_msg, classes="chat-bubble-self", markup=True)
+                        container = Horizontal(message_widget, classes="message-container-self")
+                        self.main_content.mount(container)
+                    else:
+                        # Other users' messages on the left
+                        formatted_msg = f"[bold #89b4fa]{username}[/bold #89b4fa]: {message_text}"
+                        message_widget = Static(formatted_msg, classes="chat-bubble-other", markup=True)
+                        container = Horizontal(message_widget, classes="message-container-other")
+                        self.main_content.mount(container)
+                else:
+                    formatted_msg = msg
+                    self.main_content.mount(Static(formatted_msg, classes="chat-message", markup=True))
 
     def switch_room(self, room_name: str) -> None:
         """Switch to a different room."""
@@ -1163,6 +1182,11 @@ class AeroStream(App):
         background: #1e1e2e;
         padding: 1;
         overflow-y: auto;
+        scrollbar-background: #313244;
+        scrollbar-color: #6c7086;
+        scrollbar-color-hover: #89b4fa;
+        scrollbar-color-active: #a6e3a1;
+        scrollbar-size: 1 1;
     }
     
     .chat-input {
@@ -1179,12 +1203,13 @@ class AeroStream(App):
     }
     
     .sidebar-header {
-        color: #b4befe;
+        color: #1e1e2e;
         text-style: bold;
-        background: #313244;
+        background: #89b4fa;
         padding: 1;
         margin-bottom: 1;
         text-align: center;
+        height: 3;
     }
     
     .nav-hint {
@@ -1196,15 +1221,18 @@ class AeroStream(App):
     }
     
     .room-item {
-        padding: 0 1;
-        margin-bottom: 0;
+        padding: 1;
+        margin-bottom: 1;
         color: #cdd6f4;
-        background: transparent;
+        background: #313244;
+        border-left: solid #6c7086;
+        height: 3;
     }
     
     .room-item:hover {
         background: #45475a;
         color: #89b4fa;
+        border-left: solid #89b4fa;
     }
     
     .room-current {
@@ -1230,23 +1258,73 @@ class AeroStream(App):
     }
     
     .user-item {
-        padding: 0 1;
+        padding: 1;
+        margin-bottom: 1;
         color: #cdd6f4;
-        background: transparent;
+        background: #313244;
+        border-left: solid #6c7086;
+        height: 3;
     }
     
     .user-self {
-        padding: 0 1;
+        padding: 1;
+        margin-bottom: 1;
         color: #a6e3a1;
-        background: transparent;
+        background: #45475a;
+        border-left: solid #a6e3a1;
         text-style: bold;
+        height: 3;
     }
     
     .chat-message {
-        margin-bottom: 0;
-        padding: 0 1;
+        margin-bottom: 1;
+        padding: 1 2;
         color: #cdd6f4;
-        background: transparent;
+        background: #313244;
+        border-left: solid #89b4fa;
+        text-style: none;
+        height: auto;
+        min-height: 2;
+    }
+    
+    .message-container-other {
+        width: 100%;
+        height: auto;
+        margin-bottom: 0;
+        padding-bottom: 1;
+        align: left middle;
+    }
+    
+    .message-container-self {
+        width: 100%;
+        height: auto;
+        margin-bottom: 0;
+        padding-bottom: 1;
+        align: right middle;
+    }
+    
+    .chat-bubble-other {
+        padding: 1;
+        color: #cdd6f4;
+        background: #313244;
+        border-left: solid #89b4fa;
+        text-style: none;
+        height: auto;
+        min-height: 1;
+        width: 45;
+        max-width: 45;
+    }
+    
+    .chat-bubble-self {
+        padding: 1;
+        color: #cdd6f4;
+        background: #45475a;
+        border-right: solid #a6e3a1;
+        text-style: none;
+        height: auto;
+        min-height: 1;
+        width: 45;
+        max-width: 45;
     }
     
     .system-message {
@@ -1307,17 +1385,23 @@ class AeroStream(App):
     }
     
     .info-message {
-        padding: 0 1;
+        padding: 1 2;
+        margin: 1 0;
         color: #89b4fa;
-        background: transparent;
+        background: #181825;
         text-style: italic;
+        text-align: center;
+        border: solid #45475a;
     }
     
     .welcome-message {
-        padding: 0 1;
+        padding: 1 2;
+        margin: 1 0;
         color: #a6e3a1;
-        background: transparent;
+        background: #181825;
         text-style: bold;
+        text-align: center;
+        border: solid #45475a;
     }
     """
 
