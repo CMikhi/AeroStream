@@ -6,11 +6,13 @@ This module provides a comprehensive keyboard handling system that supports:
 - Multi-character command mode (like vim's ':' commands)
 - Command parsing and validation
 - Extensible command registration system
+- Flag-based argument parsing (e.g., :join -r room_name -p password)
 """
 
 from typing import Dict, Callable, Optional, Any, List
 from dataclasses import dataclass, field
 from enum import Enum
+import shlex
 
 
 class KeyboardMode(Enum):
@@ -20,16 +22,28 @@ class KeyboardMode(Enum):
 
 
 @dataclass
+class CommandArgs:
+    """Parsed command arguments with support for flags and values."""
+    command_name: str
+    flags: Dict[str, str] = field(default_factory=dict)
+    positional: List[str] = field(default_factory=list)
+    raw_args: List[str] = field(default_factory=list)
+
+
+@dataclass
 class Command:
     """Represents a command that can be executed."""
     name: str
     handler: Callable
     description: str
     aliases: Optional[List[str]] = None
+    expected_flags: Optional[Dict[str, str]] = None  # flag -> description
     
     def __post_init__(self):
         if self.aliases is None:
             self.aliases = []
+        if self.expected_flags is None:
+            self.expected_flags = {}
 
 
 class KeyboardHandler:
@@ -80,9 +94,9 @@ class KeyboardHandler:
         """Register a single-key command."""
         self.single_key_commands[key] = handler
     
-    def register_command(self, name: str, handler: Callable, description: str, aliases: Optional[List[str]] = None) -> None:
+    def register_command(self, name: str, handler: Callable, description: str, aliases: Optional[List[str]] = None, expected_flags: Optional[Dict[str, str]] = None) -> None:
         """Register a multi-character command."""
-        command = Command(name, handler, description, aliases)
+        command = Command(name, handler, description, aliases, expected_flags)
         self.commands[name] = command
         
         # Register aliases
@@ -154,8 +168,18 @@ class KeyboardHandler:
         elif key == "down":
             self._navigate_history(1)
             return True
+        elif key == "space":
+            # Handle space key specifically
+            self.command_buffer += " "
+            self._notify_buffer_change()
+            return True
+        elif key == "minus":
+            # Handle minus key specifically for flags like -r, -p
+            self.command_buffer += "-"
+            self._notify_buffer_change()
+            return True
         elif len(key) == 1 and key.isprintable():
-            # Allow all printable characters including space
+            # Allow all printable characters
             self.command_buffer += key
             self._notify_buffer_change()
             return True
@@ -176,6 +200,66 @@ class KeyboardHandler:
         self.history_index = -1
         self._notify_mode_change()
     
+    def _parse_command_args(self, command_text: str) -> CommandArgs:
+        """
+        Parse command arguments with flag support.
+        
+        Examples:
+            "join -r room_name -p password" -> CommandArgs with flags={'r': 'room_name', 'p': 'password'}
+            "login user123" -> CommandArgs with positional=['user123']
+            "help create" -> CommandArgs with positional=['create']
+            "join -r 'my room' -p secret" -> CommandArgs with flags={'r': 'my room', 'p': 'secret'}
+        """
+        try:
+            # Use shlex to handle quoted arguments properly
+            tokens = shlex.split(command_text)
+        except ValueError:
+            # If shlex fails (e.g., unclosed quotes), fall back to simple split
+            tokens = command_text.split()
+        
+        if not tokens:
+            return CommandArgs("")
+        
+        command_name = tokens[0].lower()
+        args = tokens[1:]
+        flags = {}
+        positional = []
+        
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg.startswith('-') and len(arg) > 1:
+                # This is a flag
+                flag_name = arg[1:]  # Remove the '-' prefix
+                
+                # Collect all non-flag arguments after this flag as the flag value
+                # until we hit another flag or end of arguments
+                flag_values = []
+                j = i + 1
+                while j < len(args) and not args[j].startswith('-'):
+                    flag_values.append(args[j])
+                    j += 1
+                
+                # Join the flag values with spaces if there are multiple
+                if flag_values:
+                    flags[flag_name] = " ".join(flag_values)
+                else:
+                    # Flag without value (boolean flag)
+                    flags[flag_name] = "true"
+                
+                i = j  # Continue from where we left off
+            else:
+                # This is a positional argument (shouldn't happen with our current usage)
+                positional.append(arg)
+                i += 1
+        
+        return CommandArgs(
+            command_name=command_name,
+            flags=flags,
+            positional=positional,
+            raw_args=args
+        )
+    
     def _execute_command(self) -> None:
         """Execute the command in the buffer."""
         if not self.command_buffer.strip():
@@ -183,9 +267,10 @@ class KeyboardHandler:
             return
         
         command_text = self.command_buffer.strip()
-        parts = command_text.split()
-        command_name = parts[0].lower()
-        args = parts[1:] if len(parts) > 1 else []
+        
+        # Parse the command with flag support
+        parsed_args = self._parse_command_args(command_text)
+        command_name = parsed_args.command_name
         
         # Add to history
         if command_text not in self.command_history:
@@ -195,7 +280,8 @@ class KeyboardHandler:
         if command_name in self.commands:
             try:
                 command = self.commands[command_name]
-                result = command.handler(*args)
+                # Pass the parsed CommandArgs object to the handler
+                result = command.handler(parsed_args)
                 self._notify_command_executed(command_text, result)
             except Exception as e:
                 self._notify_error(f"Error executing '{command_text}': {str(e)}")
@@ -252,13 +338,31 @@ class KeyboardHandler:
             self.app.notify(error)
     
     # Default command handlers
-    def _quit_command(self) -> None:
+    def _quit_command(self, args: Optional[CommandArgs] = None) -> None:
         """Default quit command."""
         if self.app and hasattr(self.app, 'exit'):
             self.app.exit()
     
-    def _help_command(self) -> str:
+    def _help_command(self, args: Optional[CommandArgs] = None) -> str:
         """Default help command."""
+        if args and args.positional:
+            # Help for specific command
+            command_name = args.positional[0].lower()
+            if command_name in self.commands:
+                command = self.commands[command_name]
+                help_text = f"Command: {command.name}\n"
+                help_text += f"Description: {command.description}\n"
+                if command.aliases:
+                    help_text += f"Aliases: {', '.join(command.aliases)}\n"
+                if command.expected_flags:
+                    help_text += "Flags:\n"
+                    for flag, desc in command.expected_flags.items():
+                        help_text += f"  -{flag}: {desc}\n"
+                return help_text
+            else:
+                return f"Unknown command: {command_name}"
+        
+        # General help
         help_text = "Available commands:\n"
         unique_commands = {}
         
@@ -269,11 +373,16 @@ class KeyboardHandler:
         
         for command in unique_commands.values():
             aliases_str = f" ({', '.join(command.aliases)})" if command.aliases else ""
-            help_text += f"  {command.name}{aliases_str} - {command.description}\n"
+            flags_str = ""
+            if command.expected_flags:
+                flag_names = ', '.join(f"-{flag}" for flag in command.expected_flags.keys())
+                flags_str = f" [{flag_names}]"
+            help_text += f"  {command.name}{aliases_str}{flags_str} - {command.description}\n"
         
+        help_text += "\nUse 'help <command>' for detailed help on a specific command."
         return help_text
     
-    def _clear_command(self) -> str:
+    def _clear_command(self, args: Optional[CommandArgs] = None) -> str:
         """Default clear history command."""
         self.command_history.clear()
         return "Command history cleared"
