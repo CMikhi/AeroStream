@@ -1,0 +1,26 @@
+{
+    "General": {
+        "users": [
+            "mhik",
+            "mhiki"
+        ],
+        "messages": [
+            "mhik: hello",
+            "mhiki: weraefvaef",
+            "mhiki: asdfadfwfjdlkJFKLjd",
+            "mhiki: adf dsfd"
+        ]
+    },
+    "Random": {
+        "users": [],
+        "messages": [
+            "mhik: Helllooo"
+        ]
+    },
+    "Help": {
+        "users": [],
+        "messages": [
+            "mhik: sup"
+        ]
+    }
+}
