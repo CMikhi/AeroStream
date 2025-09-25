@@ -8,7 +8,7 @@ from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode, CommandArgs
 from floating_island import FloatingCommandLine, FloatingResultPanel
-from api import IgniteAPIClient
+from api import IgniteAPIClient, WebSocketClient
 import json
 import os
 
@@ -644,23 +644,52 @@ class RoomChatWidget(Static):
         self.chat_input = None
         self.room_counter = 0
         
-        # Load rooms from JSON or create defaults
-        self.rooms = load_rooms_data()
-        if not self.rooms:
-            self.rooms = {
-                "General": {"users": [username], "messages": []},
-                "Random": {"users": [], "messages": []},
-                "Help": {"users": [], "messages": []}
-            }
-            save_rooms_data(self.rooms)
+        # Initialize with testui room only
+        self.rooms = {
+            "testui": {"users": [username], "messages": []}
+        }
+        self.current_room = "testui"
+        self.users = [username]  # Start with current user
+        
+        # WebSocket client for real-time updates
+        self.ws_client = None
+        self.polling_timer = None
+        self.last_message_count = 0
+        
+        # Try to join the testui room via API
+        self._join_default_room()
 
-        # Ensure user is in General room
-        if username not in self.rooms["General"]["users"]:
-            self.rooms["General"]["users"].append(username)
-            save_rooms_data(self.rooms)
-
-        self.current_room = "General"
-        self.users = self.rooms[self.current_room]["users"]
+    def _join_default_room(self):
+        """Join the default testui room via API, creating it if necessary."""
+        try:
+            if self.api_client and self.api_client.is_authenticated():
+                # First try to join the testui room
+                try:
+                    response = self.api_client.join_room("testui")
+                    if response and "message" in response:
+                        self.app.notify("Joined testui room", severity="success")
+                        return
+                except Exception as join_error:
+                    # If joining fails, try to create the room first
+                    self.app.notify("testui room not found, creating it...", severity="information")
+                    try:
+                        create_response = self.api_client.create_room("testui", private=False)
+                        if create_response and "message" in create_response:
+                            # Now try to join the newly created room
+                            response = self.api_client.join_room("testui")
+                            if response and "message" in response:
+                                self.app.notify("Created and joined testui room", severity="success")
+                                return
+                        self.app.notify("Could not create testui room, using local mode", severity="warning")
+                    except Exception as create_error:
+                        self.app.notify(f"Failed to create room: {str(create_error)}", severity="warning")
+                
+                # If we get here, both join and create failed
+                self.app.notify("Using local testui room (API unavailable)", severity="information")
+            else:
+                self.app.notify("Not authenticated - using offline mode", severity="warning")
+        except Exception as e:
+            self.app.notify(f"Error with testui room setup: {str(e)}", severity="error")
 
     def compose(self) -> ComposeResult:
         """Create the room chat interface layout."""
@@ -705,6 +734,9 @@ class RoomChatWidget(Static):
             self._refresh_room_list()
             self._refresh_user_list()
             self._load_room_messages()
+            
+            # Start real-time updates via polling
+            self._setup_realtime_updates()
         except Exception as e:
             self.app.notify(f"Error initializing rooms: {str(e)}", severity="error")
 
@@ -767,7 +799,36 @@ class RoomChatWidget(Static):
     def _load_room_messages(self) -> None:
         """Load and display messages for the current room."""
         self.main_content.remove_children()
-        messages = self.rooms[self.current_room]["messages"]
+        
+        # Try to fetch messages from API first
+        messages = []
+        try:
+            if self.api_client and self.api_client.is_authenticated():
+                response = self.api_client.get_messages(self.current_room, limit=40)
+                if response and "messages" in response:
+                    # Format API messages to match our expected format
+                    api_messages = response["messages"]
+                    self.app.notify(f"Fetched {len(api_messages)} messages from API", severity="information")
+                    for msg_data in api_messages:
+                        if isinstance(msg_data, dict) and "username" in msg_data and "content" in msg_data:
+                            messages.append(f"{msg_data['username']}: {msg_data['content']}")
+                        elif isinstance(msg_data, dict) and "username" in msg_data and "message" in msg_data:
+                            messages.append(f"{msg_data['username']}: {msg_data['message']}")
+                        elif isinstance(msg_data, str):
+                            messages.append(msg_data)
+                else:
+                    # Fallback to local messages
+                    messages = self.rooms[self.current_room]["messages"]
+                    self.app.notify("No messages from API, using local", severity="warning")
+            else:
+                # Use local messages when not authenticated
+                messages = self.rooms[self.current_room]["messages"]
+                self.app.notify("Not authenticated, using local messages", severity="information")
+        except Exception as e:
+            # Fallback to local messages on API error
+            messages = self.rooms[self.current_room]["messages"]
+            self.app.notify(f"Could not fetch messages from server, using local: {str(e)}", severity="warning")
+        
         recent_messages = messages[-40:] if len(messages) > 40 else messages
         
         if not recent_messages:
@@ -796,12 +857,18 @@ class RoomChatWidget(Static):
                 else:
                     formatted_msg = msg
                     self.main_content.mount(Static(formatted_msg, classes="chat-message", markup=True))
+        
+        # Update the message count for polling comparison
+        self.last_message_count = len(messages)
 
     def switch_room(self, room_name: str) -> None:
         """Switch to a different room."""
         if room_name in self.rooms and room_name != self.current_room:
             # Store current room's users
             self.rooms[self.current_room]["users"] = self.users
+            
+            # Cleanup current connections and timers
+            self._cleanup_connections()
             
             # Switch rooms
             self.current_room = room_name
@@ -814,6 +881,9 @@ class RoomChatWidget(Static):
             
             # Update input placeholder
             self.chat_input.placeholder = f"Message #{room_name}..."
+            
+            # Setup real-time updates for new room
+            self._setup_realtime_updates()
 
     def on_clickable_room_clicked(self, event: ClickableRoom.Clicked) -> None:
         """Handle room clicks."""
@@ -857,25 +927,34 @@ class RoomChatWidget(Static):
             if not message_text:
                 return
 
-            # Try to send message via API if authenticated, fallback to local storage
+            # Send message via API (WebSocket disabled for now)
+            message_sent = False
             try:
                 if self.api_client and self.api_client.is_authenticated():
-                    # Send message to server
                     response = self.api_client.send_message(self.current_room, message_text)
-                    message = f"{self.username}: {message_text}"
+                    if response and "message" in response:
+                        message_sent = True
+                        self.app.notify("✅ Message sent", severity="success", timeout=1)
+                        # Immediately refresh to show the new message
+                        self._load_room_messages()
+                        self.main_content.scroll_to(y=10000)
+                    else:
+                        self.app.notify("Failed to send message to server, storing locally", severity="warning")
                 else:
-                    # Fallback to local mode
-                    message = f"{self.username}: {message_text}"
+                    self.app.notify("Not connected to server, storing message locally", severity="information")
             except Exception as e:
                 # If API fails, fall back to local mode
+                self.app.notify(f"Could not send to server: {str(e)}", severity="error")
+            
+            # Only store locally if server didn't handle it or failed
+            if not message_sent:
                 message = f"{self.username}: {message_text}"
-                self.app.notify(f"Message sent locally (server unavailable)", severity="warning")
-            
-            self.rooms[self.current_room]["messages"].append(message)
-            save_rooms_data(self.rooms)
-            
-            # Refresh messages display
-            self._load_room_messages()
+                self.rooms[self.current_room]["messages"].append(message)
+                save_rooms_data(self.rooms)
+                # Refresh messages display to show local message
+                self._load_room_messages()
+                # Auto scroll to bottom for new messages
+                self.main_content.scroll_to(y=10000)
             
             # Clear input
             event.input.value = ""
@@ -933,6 +1012,9 @@ class RoomChatWidget(Static):
     def _navigate_to_main_menu(self) -> None:
         """Helper method to navigate back to main menu."""
         try:
+            # Cleanup connections before navigating away
+            self._cleanup_connections()
+            
             # Get the main splash screen and switch back to main menu
             splash_screen = self.app.screen
             splash_screen.switch_to_main_menu(self.username)
@@ -940,6 +1022,93 @@ class RoomChatWidget(Static):
             # Fallback - send notification
             self.app.notify(f"Navigation error: {str(e)}", severity="error")
             self.app.notify("Use ':back' command or logout to return", severity="information")
+    
+    def _setup_realtime_updates(self) -> None:
+        """Setup real-time updates using polling."""
+        # Temporarily disable WebSocket and use polling only
+        try:
+            if self.api_client and self.api_client.is_authenticated():
+                self.app.notify("Using fast polling for real-time updates", severity="information")
+                # Start polling directly with faster interval
+                self.polling_timer = self.set_interval(1.0, self._polling_refresh)
+            else:
+                self.app.notify("Authentication required for real-time updates", severity="information")
+        except Exception as e:
+            self.app.notify(f"Setup failed: {str(e)}", severity="warning")
+    
+    def _handle_websocket_message(self, message_data: dict) -> None:
+        """Handle incoming WebSocket messages."""
+        try:
+            message_type = message_data.get("type")
+            
+            if message_type == "new_message":
+                # New message received from another user
+                msg_data = message_data.get("data", {})
+                if "username" in msg_data and "content" in msg_data:
+                    # Update the UI on the main thread
+                    self.call_later(self._refresh_messages_display)
+            
+            elif message_type == "user_joined":
+                # User joined the room
+                user_data = message_data.get("data", {})
+                username = user_data.get("username", "Unknown")
+                self.app.notify(f"{username} joined the room", severity="information")
+                self.call_later(self._refresh_user_list)
+            
+            elif message_type == "user_left":
+                # User left the room
+                user_data = message_data.get("data", {})
+                username = user_data.get("username", "Unknown")
+                self.app.notify(f"{username} left the room", severity="information")
+                self.call_later(self._refresh_user_list)
+                
+        except Exception as e:
+            # Silently handle WebSocket message errors
+            pass
+    
+    def _refresh_messages_display(self) -> None:
+        """Refresh the messages display (called from WebSocket handler)."""
+        self._load_room_messages()
+        self.main_content.scroll_to(y=10000)
+    
+    def _cleanup_connections(self) -> None:
+        """Cleanup polling timer and any connections."""
+        # Stop polling timer if it's running
+        if self.polling_timer:
+            try:
+                self.polling_timer.stop()
+                self.polling_timer = None
+            except Exception as e:
+                pass  # Silently handle cleanup errors
+    
+    def _polling_refresh(self) -> None:
+        """Fast polling method for real-time updates."""
+        if self.api_client and self.api_client.is_authenticated():
+            try:
+                # Fetch messages from API
+                response = self.api_client.get_messages(self.current_room, limit=50)
+                if response and "messages" in response:
+                    api_messages = response["messages"]
+                    new_count = len(api_messages)
+                    
+                    # Only refresh if message count changed
+                    if new_count != self.last_message_count:
+                        old_count = self.last_message_count
+                        self.last_message_count = new_count
+                        self._load_room_messages()
+                        self.main_content.scroll_to(y=10000)
+                        
+                        # Notify about new messages if count increased
+                        if new_count > old_count and old_count > 0:
+                            new_msgs = new_count - old_count
+                            self.app.notify(f"📨 {new_msgs} new message{'s' if new_msgs > 1 else ''}", severity="success", timeout=2)
+            except Exception as e:
+                # Only notify about connection issues occasionally to avoid spam
+                import time
+                current_time = time.time()
+                if not hasattr(self, '_last_error_time') or current_time - self._last_error_time > 30:
+                    self.app.notify("Connection issue during refresh", severity="warning", timeout=3)
+                    self._last_error_time = current_time
 
 
 class AeroStream(App):

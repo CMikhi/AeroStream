@@ -303,7 +303,23 @@ class WebSocketClient:
             
         try:
             ws_url = f"{self.base_url}/ws/{room_name}"
-            self.ws = websocket.create_connection(ws_url)  # type: ignore
+            print(f"Connecting to WebSocket URL: {ws_url}")
+            
+            # Add headers for ngrok compatibility
+            headers = []
+            if "ngrok" in self.base_url:
+                headers.extend([
+                    "ngrok-skip-browser-warning: true",
+                    "User-Agent: websocket-client"
+                ])
+            
+            # Set a short timeout to fail fast
+            self.ws = websocket.create_connection(
+                ws_url, 
+                header=headers if headers else None, 
+                timeout=5,
+                enable_multithread=True
+            )  # type: ignore
             
             # Send authentication message
             auth_message = {
