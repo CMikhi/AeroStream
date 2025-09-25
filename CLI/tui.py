@@ -4,7 +4,7 @@ from textual.containers import Center, Middle, Vertical, Horizontal
 from textual.widgets import Static, Footer, Input, Button
 from PIL import Image
 from PIL import ImageEnhance
-from keyboard_handler import KeyboardHandler, KeyboardMode
+from keyboard_handler import KeyboardHandler, KeyboardMode, CommandArgs
 from floating_island import FloatingCommandLine, FloatingResultPanel
 from api import IgniteAPIClient
 
@@ -761,6 +761,20 @@ class AeroStream(App):
         self.keyboard_handler.register_command("recent", self._recent_command, "Go to recent rooms screen", ["h", "history"])
         self.keyboard_handler.register_command("settings", self._settings_command, "Go to settings screen", ["s", "config", "preferences"])
         
+        # Room management commands with parameter support
+        self.keyboard_handler.register_command(
+            "join", self._join_command, 
+            "Join a room with optional parameters", 
+            ["j"],
+            {"r": "room name to join", "p": "password for the room"}
+        )
+        self.keyboard_handler.register_command(
+            "create", self._create_command, 
+            "Create a new room with optional parameters", 
+            ["new"],
+            {"r": "room name to create", "p": "password for the room"}
+        )
+        
         # Additional Vim-style commands
         self.keyboard_handler.register_command("version", self._version_command, "Show application version", ["v", "ver"])
         self.keyboard_handler.register_command("status", self._status_command, "Show current status", ["st", "info"])
@@ -872,42 +886,42 @@ class AeroStream(App):
             self.notify(error, severity="error")
     
     # Command handlers
-    def _login_command(self):
+    def _login_command(self, args=None):
         """Handle login command."""
         if not self.is_authenticated:
             self._handle_login()
         else:
             self.notify("Already logged in")
     
-    def _register_command(self):
+    def _register_command(self, args=None):
         """Handle register command."""
         if not self.is_authenticated:
             self._handle_register()
         else:
             self.notify("Please logout first to register a new account")
     
-    def _logout_command(self):
+    def _logout_command(self, args=None):
         """Handle logout command."""
         if self.is_authenticated:
             self._handle_logout()
         else:
             self.notify("Not currently logged in")
     
-    def _rooms_command(self):
+    def _rooms_command(self, args=None):
         """Handle rooms command."""
         if self.is_authenticated:
             self.notify("Selected: Rooms")
         else:
             self.notify("Please login first")
     
-    def _recent_command(self):
+    def _recent_command(self, args=None):
         """Handle recent rooms command."""
         if self.is_authenticated:
             self.notify("Selected: Recent Rooms")
         else:
             self.notify("Please login first")
     
-    def _settings_command(self):
+    def _settings_command(self, args=None):
         """Handle settings command."""
         if self.is_authenticated:
             self.notify("Selected: Settings")
@@ -915,61 +929,61 @@ class AeroStream(App):
             self.notify("Please login first")
     
     # TODO: Update to variable version function
-    def _version_command(self):
+    def _version_command(self, args=None):
         """Handle version command."""
         return "Ignite TUI v1.0.0 - rolling-4b0a60e"
     
-    def _status_command(self):
+    def _status_command(self, args=None):
         """Handle status command."""
         mode = "Command Mode" if self.keyboard_handler.is_in_command_mode() else "Normal Mode"
         return f"Status: {mode} | Server: Disconnected | Theme: Dark"
     
-    def _refresh_command(self):
+    def _refresh_command(self, args=None):
         """Handle refresh command."""
         self.refresh()
         return "Interface refreshed"
     
-    def _theme_command(self):
+    def _theme_command(self, args=None):
         """Handle theme command."""
         return "Theme toggle not yet implemented"
     
-    def _connect_command(self):
+    def _connect_command(self, args=None):
         """Handle connect command."""
         return "Connecting to server..."
     
-    def _disconnect_command(self):
+    def _disconnect_command(self, args=None):
         """Handle disconnect command."""
         return "Disconnected from server"
     
-    def _home_command(self):
+    def _home_command(self, args=None):
         """Handle home command."""
         return "Navigated to home screen"
     
-    def _back_command(self):
+    def _back_command(self, args=None):
         """Handle back command."""
         return "Going back"
     
-    def _next_command(self):
+    def _next_command(self, args=None):
         """Handle next command."""
         return "Moving to next item"
     
-    def _previous_command(self):
+    def _previous_command(self, args=None):
         """Handle previous command."""
         return "Moving to previous item"
     
-    def _debug_command(self):
+    def _debug_command(self, args=None):
         """Handle debug command."""
         return "Debug mode toggled"
     
-    def _log_command(self):
+    def _log_command(self, args=None):
         """Handle log command."""
         return "Log viewer not yet implemented"
     
-    def _save_command(self):
+    def _save_command(self, args=None):
         """Handle save command."""
         return "State saved"
     
-    def _custom_help_command(self):
+    def _custom_help_command(self, args=None):
         """Handle custom help command with both single-key and colon commands."""
         help_text = """
 Colon Commands (press : then type):
@@ -979,11 +993,53 @@ Colon Commands (press : then type):
     :rooms, :p        - Go to rooms
     :recent, :t       - Recent rooms
     :settings, :config - Settings
+    :join, :j -r <room> -p <pass> - Join a room
+    :create, :new -r <room> -p <pass> - Create a room
     :version, :v      - Show version
     :status, :st      - Show status
     :refresh, :reload - Refresh interface
 """
         return help_text.strip()
+    
+    def _join_command(self, args: CommandArgs):
+        """Handle join room command with parameters."""
+        if not self.is_authenticated:
+            return "Please login first to join a room"
+        
+        if not args or not args.flags:
+            return "Usage: :join -r <room_name> [-p <password>]\nExample: :join -r lobby -p secret123"
+        
+        room_name = args.flags.get('r')
+        password = args.flags.get('p', '')
+        
+        if not room_name:
+            return "Room name is required. Use -r flag to specify room name"
+        
+        # Simulate joining a room
+        if password:
+            return f"Joining room '{room_name}' with password..."
+        else:
+            return f"Joining room '{room_name}' (no password)..."
+    
+    def _create_command(self, args: CommandArgs):
+        """Handle create room command with parameters."""
+        if not self.is_authenticated:
+            return "Please login first to create a room"
+        
+        if not args or not args.flags:
+            return "Usage: :create -r <room_name> [-p <password>]\nExample: :create -r myroom -p secret123"
+        
+        room_name = args.flags.get('r')
+        password = args.flags.get('p', '')
+        
+        if not room_name:
+            return "Room name is required. Use -r flag to specify room name"
+        
+        # Simulate creating a room
+        if password:
+            return f"Creating password-protected room '{room_name}'..."
+        else:
+            return f"Creating public room '{room_name}'..."
     
     def compose(self) -> ComposeResult:
         self.splash_screen = SplashScreen()
@@ -1042,8 +1098,8 @@ Colon Commands (press : then type):
     def _handle_login(self):
         """Handle login button press."""
         try:
-            username_input = self.query_one("#username-input")
-            password_input = self.query_one("#password-input")
+            username_input = self.query_one("#username-input", Input)
+            password_input = self.query_one("#password-input", Input)
 
             username = str(username_input.value).strip()
             password = str(password_input.value).strip()
@@ -1219,8 +1275,8 @@ Colon Commands (press : then type):
     def _handle_register(self):
         """Handle register button press."""
         try:
-            username_input = self.query_one("#username-input")
-            password_input = self.query_one("#password-input")
+            username_input = self.query_one("#username-input", Input)
+            password_input = self.query_one("#password-input", Input)
             
             username = str(username_input.value).strip()
             password = str(password_input.value).strip()
@@ -1349,6 +1405,7 @@ Colon Commands (press : then type):
             self.notify("Logout completed with errors", severity="warning")
             self.notify(str(e), severity="error")
 
+
     def on_key(self, event) -> None:
         """Handle keyboard shortcuts using the KeyboardHandler."""
         
@@ -1365,7 +1422,7 @@ Colon Commands (press : then type):
             # If we're in normal mode, let Textual handle them (help/quit actions)
             else:
                 return  # Let Textual's binding system handle it
-       
+
         # Handle enter key to dismiss result panel in normal mode
         if event.key == "enter" and self.keyboard_handler.mode == KeyboardMode.NORMAL:
             self.command_line_should_stay_visible = False
@@ -1406,7 +1463,14 @@ Colon Commands (press : then type):
             return
         
         # For all other keys, use the keyboard handler normally
-        handled = self.keyboard_handler.handle_key(event.key)
+        # Map special keys to their actual characters for command input
+        key_to_handle = event.key
+        if event.key == "space":
+            key_to_handle = "space"  # Keep as "space" for handler to recognize
+        elif event.key == "minus":
+            key_to_handle = "minus"  # Keep as "minus" for handler to recognize
+        
+        handled = self.keyboard_handler.handle_key(key_to_handle)
         
         # Show current mode in debug info (only show unhandled keys in normal mode)
         if not handled and self.keyboard_handler.mode == KeyboardMode.NORMAL:
