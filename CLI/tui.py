@@ -221,7 +221,7 @@ try:
     OCEAN_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="ocean")
     
     # Green for success/login contexts
-    SUCCESS_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=90, color="bright_green")
+    SUCCESS_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="bright_green")
 
     ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="cyan")
 
