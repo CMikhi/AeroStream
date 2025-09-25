@@ -378,9 +378,9 @@ class MenuItem(Static):
         main_content = f"[bright_white]{self.icon}[/] [white]{self.label}[/]"
         shortcut_part = f"[dim]{self.shortcut}[/]"
         # Add padding to create space between content and shortcut
-        padding = " " * (40 - 1 - len(self.label))  # Adjust 40 to change spacing
+        padding = " " * (41 - 1 - len(self.label))  # Adjust 40 to change spacing
         if self.label == 'Settings':
-            padding = (" " * (33 - 1 - len(self.label)))+" " # Adjust 40 to change spacing
+            padding = (" " * (40 - 1 - len(self.label)))+" " # Adjust 40 to change spacing
         return f"{main_content}{padding}{shortcut_part}"
     
     def on_click(self) -> None:
@@ -481,18 +481,37 @@ class SplashScreen(Static):
         # Footer with quick commands
         yield Footer()
     
+    def _create_room_content(self, username: str, api_client) -> Static:
+        """Create room chat content as a widget."""
+        # Create a container that holds all the room chat functionality
+        room_widget = RoomChatWidget(username, api_client)
+        return room_widget
+    
     def switch_to_main_menu(self, username: str):
-        """Switch from login screen to main menu."""
+        """Switch to main menu from any screen."""
         self.username = username
         self.current_screen = "main"
         
-        # Remove login screen and add main menu
-        login_screen = self.query_one("#login-screen")
-        login_screen.remove()
+        # Remove current content (login screen or room content)
+        try:
+            login_screen = self.query_one("#login-screen")
+            login_screen.remove()
+        except Exception:
+            pass
         
-        main_menu = MainMenuScreen()
-        main_menu.id = "main-screen"
-        self.mount(main_menu, before="#command-line")
+        try:
+            room_content = self.query_one("#room-content")
+            room_content.remove()
+        except Exception:
+            pass
+        
+        # Add main menu if not already present
+        try:
+            self.query_one("#main-screen")
+        except Exception:
+            main_menu = MainMenuScreen()
+            main_menu.id = "main-screen"
+            self.mount(main_menu, before="#command-line")
     
     def switch_to_login(self):
         """Switch from main menu back to login screen."""
@@ -516,13 +535,22 @@ class SplashScreen(Static):
             self.current_screen = "rooms"
             self.username = username
             
+            # Remove main menu and add room content to this screen instead of pushing new screen
+            try:
+                main_screen = self.query_one("#main-screen")
+                main_screen.remove()
+            except Exception as e:
+                # Screen might not exist yet, that's okay
+                pass
+            
             # Get reference to parent app to pass client
             app = self.app
             api_client = getattr(app, 'client', None)
             
-            # Create and push room screen
-            room_screen = RoomChatScreen(username, api_client)
-            self.app.push_screen(room_screen)
+            # Create room content as a widget and mount it to this screen
+            room_content = self._create_room_content(username, api_client)
+            room_content.id = "room-content"
+            self.mount(room_content, before="#command-line")
             
         except Exception as e:
             self.app.notify(f"Error switching to rooms: {str(e)}", severity="error")
@@ -594,15 +622,15 @@ class ClickableRoom(Static):
         self.post_message(self.Clicked(self.room_name))
 
 
-class RoomChatScreen(Screen):
+class RoomChatWidget(Static):
     """Main room chat interface integrated into the TUI."""
     
     BINDINGS = [
         ("m", "focus_message_box", "Focus Message Box"),
         ("up", "previous_room", "Previous Room"),
         ("down", "next_room", "Next Room"),
-        ("escape", "back_to_menu", "Back to Menu"),
-        ("h", "back_to_home", "Home"),
+        ("escape", "unfocus_input", "Unfocus Input"),
+        ("ctrl+h", "back_to_home", "Back to Home"),
     ]
     
     def __init__(self, username: str, api_client):
@@ -686,7 +714,7 @@ class RoomChatScreen(Screen):
         
         # Add header with navigation hint
         self.roomBar.mount(Static("󰋜 Rooms", classes="sidebar-header"))
-        self.roomBar.mount(Static("ESC: Back to Menu", classes="nav-hint"))
+        self.roomBar.mount(Static("ESC: Unfocus | ^H: Home", classes="nav-hint"))
         
         self.room_list = sorted(self.rooms.keys())
         
@@ -873,19 +901,41 @@ class RoomChatScreen(Screen):
             new_index = (current_index + 1) % len(self.room_list)
             self.switch_room(self.room_list[new_index])
 
-    def action_back_to_menu(self) -> None:
-        """Return to main menu."""
-        self._navigate_to_main_menu()
+    def action_unfocus_input(self) -> None:
+        """Unfocus the message input."""
+        try:
+            # Check if the input is focused and unfocus it
+            if self.chat_input.has_focus:
+                self.chat_input.blur()
+            else:
+                # If nothing is focused, focus the input for convenience
+                self.chat_input.focus()
+        except Exception:
+            # Fallback - just blur any focused widget
+            self.screen.set_focus(None)
 
     def action_back_to_home(self) -> None:
-        """Return to main menu (same as back_to_menu)."""
+        """Return to main menu."""
         self._navigate_to_main_menu()
         
+    def on_key(self, event) -> None:
+        """Handle key events for room screen, including command line activation."""
+        try:
+            # Pass key events to the app's keyboard handler if it exists
+            if hasattr(self.app, 'keyboard_handler'):
+                handled = self.app.keyboard_handler.handle_key_event(event.key)
+                if handled:
+                    event.prevent_default()
+        except Exception as e:
+            # If keyboard handler fails, continue with normal key processing
+            pass
+    
     def _navigate_to_main_menu(self) -> None:
         """Helper method to navigate back to main menu."""
         try:
-            # Pop this screen to return to the previous one
-            self.app.pop_screen()
+            # Get the main splash screen and switch back to main menu
+            splash_screen = self.app.screen
+            splash_screen.switch_to_main_menu(self.username)
         except Exception as e:
             # Fallback - send notification
             self.app.notify(f"Navigation error: {str(e)}", severity="error")
@@ -1154,6 +1204,12 @@ class AeroStream(App):
         height: 100%;
         width: 100%;
         background: #1e1e2e;
+        layer: below;
+    }
+    
+    #room-content {
+        height: 100%;
+        width: 100%;
     }
     
     .room-sidebar {
