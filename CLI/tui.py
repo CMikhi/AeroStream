@@ -506,7 +506,7 @@ Colon Commands (press : then type):
         if result:
             try:
                 command_line = self.query_one("#command-line", FloatingCommandLine)
-                command_line.show_result(result, "info")  # Remove duration=0 since default is now 0
+                command_line.show_result(result, "info")
             except Exception:
                 self.notify(result)
     
