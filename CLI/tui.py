@@ -8,7 +8,7 @@ from keyboard_handler import KeyboardHandler, KeyboardMode, CommandArgs
 from floating_island import FloatingCommandLine, FloatingResultPanel
 from api import IgniteAPIClient
 
-client = IgniteAPIClient()
+# Note: client will be initialized per AeroStream instance to avoid conflicts
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -725,6 +725,7 @@ class AeroStream(App):
     # KEYBOARD SHORTCUTS INTEGRATION --- DO NOT TOUCH ---
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.client = IgniteAPIClient()  # Each app instance gets its own client
         self.keyboard_handler = KeyboardHandler(self)
         self._setup_keyboard_callbacks()
         self._register_custom_commands()
@@ -1125,17 +1126,17 @@ Colon Commands (press : then type):
         try:
             # Set a reasonable timeout for the request
             import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 10  # 10 second timeout
+            old_timeout = getattr(self.client.session, 'timeout', None)
+            self.client.session.timeout = 10  # 10 second timeout
             
-            login_result = client.login(username, password)
+            login_result = self.client.login(username, password)
             
             # Reset timeout
             if old_timeout:
-                client.session.timeout = old_timeout
+                self.client.session.timeout = old_timeout
             
             # Check if login was successful and call handler
-            if client.is_authenticated():
+            if self.client.is_authenticated():
                 self._handle_login_success(username)
             else:
                 self._handle_login_failure("Invalid username or password")
@@ -1144,7 +1145,7 @@ Colon Commands (press : then type):
             # Reset timeout
             try:
                 if old_timeout:
-                    client.session.timeout = old_timeout
+                    self.client.session.timeout = old_timeout
             except:
                 pass
             
@@ -1158,17 +1159,17 @@ Colon Commands (press : then type):
             
             # Set a reasonable timeout for the request
             import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 5  # Shorter timeout for faster failure
+            old_timeout = getattr(self.client.session, 'timeout', None)
+            self.client.session.timeout = 5  # Shorter timeout for faster failure
             
             self.notify("Sending registration request...", severity="information")
-            register_result = client.register(username, password)
+            register_result = self.client.register(username, password)
             
             self.notify(f"Registration result: {register_result}", severity="information")
             
             # Reset timeout
             if old_timeout:
-                client.session.timeout = old_timeout
+                self.client.session.timeout = old_timeout
             
             # Check if registration was successful
             if register_result and 'error' not in register_result:
@@ -1185,7 +1186,7 @@ Colon Commands (press : then type):
             # Reset timeout
             try:
                 if old_timeout:
-                    client.session.timeout = old_timeout
+                    self.client.session.timeout = old_timeout
             except:
                 pass
             
@@ -1197,17 +1198,17 @@ Colon Commands (press : then type):
         try:
             # Set a reasonable timeout for the request
             import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 10  # 10 second timeout
+            old_timeout = getattr(self.client.session, 'timeout', None)
+            self.client.session.timeout = 10  # 10 second timeout
             
-            login_result = client.login(username, password)
+            login_result = self.client.login(username, password)
             
             # Reset timeout
             if old_timeout:
-                client.session.timeout = old_timeout
+                self.client.session.timeout = old_timeout
             
             # Check if login was successful
-            if client.is_authenticated():
+            if self.client.is_authenticated():
                 # Schedule success handling on main thread
                 self.call_from_thread(self._handle_login_success, username)
             else:
@@ -1218,7 +1219,7 @@ Colon Commands (press : then type):
             # Reset timeout
             try:
                 if old_timeout:
-                    client.session.timeout = old_timeout
+                    self.client.session.timeout = old_timeout
             except:
                 pass
             
@@ -1307,14 +1308,14 @@ Colon Commands (press : then type):
         try:
             # Set a reasonable timeout for the request
             import requests
-            old_timeout = getattr(client.session, 'timeout', None)
-            client.session.timeout = 10  # 10 second timeout
+            old_timeout = getattr(self.client.session, 'timeout', None)
+            self.client.session.timeout = 10  # 10 second timeout
             
-            register_result = client.register(username, password)
+            register_result = self.client.register(username, password)
             
             # Reset timeout
             if old_timeout:
-                client.session.timeout = old_timeout
+                self.client.session.timeout = old_timeout
             
             # Schedule UI updates on main thread
             self.call_from_thread(self._handle_register_success, username)
@@ -1323,7 +1324,7 @@ Colon Commands (press : then type):
             # Reset timeout
             try:
                 if old_timeout:
-                    client.session.timeout = old_timeout
+                    self.client.session.timeout = old_timeout
             except:
                 pass
             
@@ -1352,19 +1353,11 @@ Colon Commands (press : then type):
     def _handle_register_error(self, error_message: str):
         """Handle registration errors on main thread."""
         try:
-            username_input = self.query_one("#username-input")
-            password_input = self.query_one("#password-input")
-            
+            # Show appropriate error message
             if "Username already taken" in error_message or "already taken" in error_message:
                 self.notify("Username already exists. Please choose a different username.", severity="error")
-                # Clear username field so user can try a different one
-                username_input.value = ""
-                username_input.focus()
             elif "Password must be at least 6 characters" in error_message:
                 self.notify("Password must be at least 6 characters long", severity="error")
-                # Clear password field
-                password_input.value = ""
-                password_input.focus()
             elif any(word in error_message.lower() for word in ["timeout", "network", "connection", "failed to establish"]):
                 self.notify("Registration failed. Please check your connection and try again.", severity="error")
             elif "400" in error_message:
@@ -1373,11 +1366,25 @@ Colon Commands (press : then type):
                 self.notify("Registration failed. Please try again.", severity="error")
                 self.notify(error_message, severity="error")
             
-            # Clear password field for security in all error cases
-            password_input.value = ""
+            # Try to clear input fields, but don't fail if they're not available
+            try:
+                username_input = self.query_one("#username-input")
+                password_input = self.query_one("#password-input")
+                
+                if "Username already taken" in error_message or "already taken" in error_message:
+                    # Clear username field so user can try a different one
+                    username_input.value = ""
+                    username_input.focus()
+                else:
+                    # Clear password field for security in other error cases
+                    password_input.value = ""
+            except:
+                # Input fields not available, that's okay - just show the notification
+                pass
             
         except Exception as e:
-            self.notify("Registration failed and UI update failed", severity="error")
+            # Fallback - just show a basic error message
+            self.notify("Registration failed. Please try again.", severity="error")
     
     def _handle_logout(self):
         """Handle logout action."""
@@ -1386,9 +1393,9 @@ Colon Commands (press : then type):
             self.is_authenticated = False
             
             # Logout from the client if it has a logout method
-            if hasattr(client, 'logout'):
+            if hasattr(self.client, 'logout'):
                 try:
-                    client.logout()
+                    self.client.logout()
                 except Exception as e:
                     # Log the error but don't prevent logout from UI perspective
                     self.notify(f"Server logout error: {str(e)}", severity="warning")
