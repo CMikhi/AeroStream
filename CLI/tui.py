@@ -1042,8 +1042,8 @@ Colon Commands (press : then type):
     def _handle_login(self):
         """Handle login button press."""
         try:
-            username_input = self.query_one("#username-input")
-            password_input = self.query_one("#password-input")
+            username_input = self.query_one("#username-input", Input)
+            password_input = self.query_one("#password-input", Input)
 
             self.notify(f"username: {username_input.value}, password: {password_input.value}")
 
@@ -1070,8 +1070,8 @@ Colon Commands (press : then type):
     def _handle_register(self):
         """Handle register button press."""
         try:
-            username_input = self.query_one("#username-input")
-            password_input = self.query_one("#password-input")
+            username_input = self.query_one("#username-input", Input)
+            password_input = self.query_one("#password-input", Input)
             
             username = username_input.value.strip()
             password = password_input.value.strip()
@@ -1090,6 +1090,8 @@ Colon Commands (press : then type):
     def _handle_logout(self):
         """Handle logout action."""
         self.is_authenticated = False
+        if self.splash_screen is None:
+            self.splash_screen = self.query_one(SplashScreen)
         self.splash_screen.switch_to_login()
         self.notify("Logged out successfully", severity="information")
 
@@ -1109,7 +1111,7 @@ Colon Commands (press : then type):
             # If we're in normal mode, let Textual handle them (help/quit actions)
             else:
                 return  # Let Textual's binding system handle it
-       
+
         # Handle enter key to dismiss result panel in normal mode
         if event.key == "enter" and self.keyboard_handler.mode == KeyboardMode.NORMAL:
             self.command_line_should_stay_visible = False
