@@ -481,16 +481,16 @@ class AeroStream(App):
     def _custom_help_command(self):
         """Handle custom help command with both single-key and colon commands."""
         help_text = """
-Colon Commands (press : then type):                             
-    :help, :h         - Show this help                                          
-    :login, :l        - Go to login                              
-    :register, :r     - Go to register                           
-    :rooms, :p        - Go to rooms                              
-    :recent, :t       - Recent rooms                             
-    :settings, :config - Settings                                
-    :version, :v      - Show version                             
-    :status, :st      - Show status                                                     
-    :refresh, :reload - Refresh interface                                                                                     
+Colon Commands (press : then type):
+    :help, :h         - Show this help
+    :login, :l        - Go to login
+    :register, :r     - Go to register
+    :rooms, :p        - Go to rooms
+    :recent, :t       - Recent rooms
+    :settings, :config - Settings
+    :version, :v      - Show version
+    :status, :st      - Show status
+    :refresh, :reload - Refresh interface
 """
         return help_text.strip()
     
