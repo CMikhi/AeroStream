@@ -47,31 +47,31 @@ export class BodyRequiredGuard implements CanActivate {
     const isLoginDto = (v: unknown): v is loginUserDto =>
       typeof v === "object" &&
       v !== null &&
-      "email" in v &&
-      typeof (v as { email?: unknown }).email === "string" &&
+      "username" in v &&
+      typeof (v as { username?: unknown }).username === "string" &&
       "password" in v &&
       typeof (v as { password?: unknown }).password === "string";
     const isCreateUserDto = (v: unknown): v is CreateUserDto =>
       typeof v === "object" &&
       v !== null &&
-      "email" in v &&
-      typeof (v as { email?: unknown }).email === "string" &&
+      "username" in v &&
+      typeof (v as { username?: unknown }).username === "string" &&
       "password" in v &&
       typeof (v as { password?: unknown }).password === "string";
 
     if (routePath?.includes("login")) {
       if (!isLoginDto(body)) {
-        throw new BadRequestException("Email and password are required");
+        throw new BadRequestException("username and password are required");
       }
-      if (!body.email || !body.password) {
-        throw new BadRequestException("Email and password are required");
+      if (!body.username || !body.password) {
+        throw new BadRequestException("username and password are required");
       }
     } else if (routePath?.includes("register")) {
       if (!isCreateUserDto(body)) {
-        throw new BadRequestException("Email and password are required");
+        throw new BadRequestException("username and password are required");
       }
-      if (!body.email || !body.password) {
-        throw new BadRequestException("Email and password are required");
+      if (!body.username || !body.password) {
+        throw new BadRequestException("username and password are required");
       }
     }
 

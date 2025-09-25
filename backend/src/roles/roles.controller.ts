@@ -54,7 +54,7 @@ export class RolesController {
       return {
           message: "User role updated successfully",
           status: 200,
-          data: { id: updatedUser.id, email: updatedUser.email, role: updatedUser.role },
+          data: { id: updatedUser.id, username: updatedUser.username, role: updatedUser.role },
       };
   }
 }

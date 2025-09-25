@@ -15,7 +15,6 @@ import { BodyRequiredGuard } from "../auth/body-required.guard";
 interface AuthenticatedRequest {
   user: {
     id: string;
-    email: string;
     username: string;
     role: string;
   };

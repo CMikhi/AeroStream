@@ -25,22 +25,18 @@ export class DbService {
 	}
 
 	async create(user: User): Promise<User | undefined> {
-		// Check for existing user by email or username
-		const existingUserByEmail = await this.findOne(undefined, user.email);
-		const existingUserByUsername = await this.findOne(undefined, undefined, user.username);
+		// Check for existing user by username
+		const existingUserByUsername = await this.findOne(undefined, user.username);
 		
-		if (existingUserByEmail || existingUserByUsername) {
+		if (existingUserByUsername) {
 			throw new ConflictException('User already exists');
 		}
 		return await this.userRepository.save(user);
 	}
 
-	async findOne(uuid?: string, email?: string, username?: string): Promise<User | null> {
+	async findOne(uuid?: string, username?: string): Promise<User | null> {
 		if (uuid) {
 			return await this.userRepository.findOne({ where: { id: uuid } });
-		}
-		if (email) {
-			return await this.userRepository.findOne({ where: { email } });
 		}
 		if (username) {
 			return await this.userRepository.findOne({ where: { username } });

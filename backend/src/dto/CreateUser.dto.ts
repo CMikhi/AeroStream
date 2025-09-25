@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import {
-  IsEmail,
   IsNotEmpty,
   IsString,
   Length,
@@ -10,17 +9,10 @@ import {
 } from "class-validator";
 
 export class CreateUserDto {
-  @IsNotEmpty({ message: "Email is required" })
-  @IsEmail({}, { message: "Invalid email format" })
-  email: string;
-
-  @IsNotEmpty()
+  @IsNotEmpty({ message: "Username is required" })
+  @Length(3, 20, { message: "Username must be between 3 and 20 characters" })
   @IsString()
-  firstName: string;
-
-  @IsNotEmpty()
-  @IsString()
-  lastName: string;
+  username: string;
 
   @IsNotEmpty({ message: "Password is required" })
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
@@ -34,10 +26,6 @@ export class CreateUserDto {
     minSymbols: 1,
   })
   password: string;
-
-  @IsNotEmpty({ message: "Username is required" })
-  @Length(3, 20, { message: "Username must be between 3 and 20 characters" })
-  username: string;
 
   @IsOptional()
   @IsString()

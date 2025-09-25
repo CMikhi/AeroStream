@@ -43,11 +43,11 @@ describe('UsersController', () => {
     });
     it('returns mapped users when present', async () => {
       db.findAll.mockResolvedValue([
-        { id: '1', email: 'a@b.com', firstName: 'A', lastName: 'B', createdAt: new Date(), role: 'user' },
+        { id: '1', username: 'testuser', createdAt: new Date(), role: 'user' },
       ]);
       const res = await controller.findAll();
       expect(res.status).toBe(200);
-      expect(res.data[0].email).toBe('a@b.com');
+      expect(res.data[0].username).toBe('testuser');
       expect(res.data[0].id).toBeDefined();
     });
   });
@@ -59,7 +59,7 @@ describe('UsersController', () => {
       expect(res.status).toBe(404);
     });
     it('returns sanitized user', async () => {
-      db.findOne.mockResolvedValue({ id: '1', email: 'a@b.com', firstName: 'A', lastName: 'B', createdAt: new Date(), role: 'user', password: 'secret', refreshTokenHash: 'hash' });
+      db.findOne.mockResolvedValue({ id: '1', username: 'testuser', createdAt: new Date(), role: 'user', password: 'secret', refreshTokenHash: 'hash' });
       const res = await controller.findOne('1');
       expect(res.status).toBe(200);
       expect(res.data.password).toBeUndefined();
@@ -74,7 +74,7 @@ describe('UsersController', () => {
       expect(res.status).toBe(404);
     });
     it('returns deleted user meta', async () => {
-      db.remove.mockResolvedValue({ id: '1', email: 'a@b.com', firstName: 'A', lastName: 'B' });
+      db.remove.mockResolvedValue({ id: '1', username: 'testuser' });
       const res = await controller.deleteUser('1');
       expect(res.status).toBe(200);
     });
@@ -87,10 +87,10 @@ describe('UsersController', () => {
       expect(res.status).toBe(404);
     });
     it('returns updated user', async () => {
-      db.update.mockResolvedValue({ id: '1', email: 'a@b.com', firstName: 'A', lastName: 'B', role: 'user' });
-      const res = await controller.updateUser('1', { firstName: 'A' } as any);
+      db.update.mockResolvedValue({ id: '1', username: 'testuser', role: 'user' });
+      const res = await controller.updateUser('1', { password: 'newpassword123!' } as any);
       expect(res.status).toBe(200);
-      expect(res.data.email).toBe('a@b.com');
+      expect(res.data.username).toBe('testuser');
     });
   });
 });

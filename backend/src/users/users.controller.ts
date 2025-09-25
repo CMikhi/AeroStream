@@ -25,9 +25,7 @@ export class UsersController {
 			status: 200,
 			data: users.map((user) => ({
 				id: user.id,
-				email: user.email,
-				firstName: user.firstName,
-				lastName: user.lastName,
+				username: user.username,
 				createdAt: user.createdAt,
 				role: user.role,
 			})),
@@ -38,7 +36,7 @@ export class UsersController {
 	@UseGuards(RolesGuard)
 	@Roles(UserRole.ADMIN, UserRole.USER) // Both admins and users can view user details
 	async findOne(@Param('uuid') uuid: string) {
-		const user = await this.usersService.findOne(uuid, undefined);
+		const user = await this.usersService.findOne(uuid);
 		if (!user) {
 			return { message: 'User not found', status: 404, data: undefined };
 		}
@@ -48,9 +46,7 @@ export class UsersController {
 			status: 200,
 			data: {
 				id: user.id,
-				email: user.email,
-				firstName: user.firstName,
-				lastName: user.lastName,
+				username: user.username,
 				createdAt: user.createdAt,
 				role: user.role,
 			},
@@ -70,9 +66,7 @@ export class UsersController {
 			status: 200,
 			data: {
 				id: user.id,
-				email: user.email,
-				firstName: user.firstName,
-				lastName: user.lastName,
+				username: user.username,
 			},
 		};
 	}
@@ -93,9 +87,7 @@ export class UsersController {
 			status: 200,
 			data: {
 				id: updatedUser.id,
-				email: updatedUser.email,
-				firstName: updatedUser.firstName,
-				lastName: updatedUser.lastName,
+				username: updatedUser.username,
 				role: updatedUser.role,
 			},
 		};

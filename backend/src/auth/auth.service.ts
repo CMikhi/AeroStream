@@ -23,12 +23,12 @@ export class AuthService {
 	) {}
 
 	/**
-	 * Authenticates a user by validating their username/email and password credentials.
+	 * Authenticates a user by validating their username and password credentials.
 	 *
-	 * @param loginUserDto - Login credentials containing username or email and password
+	 * @param loginUserDto - Login credentials containing username and password
 	 * @returns A promise that resolves to an object containing a success message and authentication token
-	 * @throws {Error} When username/email or password are missing
-	 * @throws {Error} When user with the provided username/email is not found
+	 * @throws {Error} When username or password are missing
+	 * @throws {Error} When user with the provided username is not found
 	 * @throws {Error} When the provided password doesn't match the stored hash
 	 *
 	 * @example
@@ -39,13 +39,8 @@ export class AuthService {
 	 * ```
 	 */
 	async login(loginUserDto: loginUserDto): Promise<{ message: string; userID: string; accessToken: string; refreshToken: string; }> {
-		// Find user by username or email
-		let user: User | null = null;
-		if (loginUserDto.username) {
-			user = await this.dbService.findOne(undefined, undefined, loginUserDto.username);
-		} else if (loginUserDto.email) {
-			user = await this.dbService.findOne(undefined, loginUserDto.email);
-		}
+		// Find user by username
+		const user: User | null = await this.dbService.findOne(undefined, loginUserDto.username);
 
 		let isValid = !!user;
 		const passwordHash = user?.password ?? '$2b$10$C6UzMDM.H6dfI/f/IKcEeO1jJXclB/6L6iRHIx6e.C5F9jq5Hn4e.';
@@ -74,25 +69,24 @@ export class AuthService {
 	}
 
 	/**
-	 * Registers a new user with the provided email and password.
+	 * Registers a new user with the provided username and password.
 	 *
-	 * @param email - The user's email address
-	 * @param password - The user's plain text password
-	 * @returns A promise that resolves to an object containing a success message and the user's email
-	 * @throws {Error} When email or password is missing
+	 * @param createUserDto - The user's registration data containing username and password
+	 * @returns A promise that resolves to an object containing a success message and the user's ID
+	 * @throws {Error} When username or password is missing
 	 * @throws {Error} When password hashing fails
 	 *
 	 * @example
 	 * ```typescript
-	 * const result = await authService.register('user@example.com', 'securePassword123');
-	 * console.log(result); // { message: 'User registered successfully', userId: 'user@example.com' }
+	 * const result = await authService.register({ username: 'newuser', password: 'securePassword123' });
+	 * console.log(result); // { message: 'User registered successfully', userID: 'uuid' }
 	 * ```
 	 */
 	async register(createUserDto: CreateUserDto): Promise<{ message: string; userID: string; accessToken: string; refreshToken: string; }> {
 		const saltRounds = 12;
 
 		// Check if user already exists
-		if (await this.dbService.findOne(undefined, createUserDto.email)) {
+		if (await this.dbService.findOne(undefined, createUserDto.username)) {
 			throw new BadRequestException('User already exists');
 		}
 
@@ -113,7 +107,7 @@ export class AuthService {
 			password: hashedPassword,
 			createdAt: new Date(),
 			id: undefined,
-			role: 'user',
+			role: createUserDto.role || 'user',
 			refreshTokenHash: '',
 		};
 

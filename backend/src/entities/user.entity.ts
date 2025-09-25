@@ -10,16 +10,7 @@ export class User {
   username: string;
 
   @Column()
-  firstName: string;
-
-  @Column()
-  lastName: string;
-
-  @Column()
   createdAt: Date;
-
-  @Column({ unique: true })
-  email: string;
 
   @Column()
   password: string;

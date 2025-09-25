@@ -16,10 +16,15 @@ except ImportError:
 class IgniteAPIClient:
     """
     API client for the Ignite Chat application backend.
-    Provides interface to all backend routes with authentication handling.
+    Provides interface to all backend routes with username/password authentication.
+    
+    The backend now uses a simplified authentication model with only:
+    - username (required, 3-20 characters)  
+    - password (required, must contain uppercase, lowercase, number, symbol, min 12 chars)
+    - role (optional, defaults to "user")
     """
     
-    def __init__(self, base_url: str = "http://homebred-irredeemably-madie.ngrok-free.dev/"):
+    def __init__(self, base_url: str = "http://localhost:8000"):
         """
         Initialize the API client.
         
@@ -100,33 +105,45 @@ class IgniteAPIClient:
             raise requests.RequestException(f"Request failed: {error_message}") from e
 
     # Authentication Methods
-    def register(self, username: str, password: str) -> Dict[str, Any]:
+    def register(self, username: str, password: str, role: str = "user") -> Dict[str, Any]:
         """
         Register a new user.
         
         Args:
-            username: Username for the new user
-            password: Password (must be at least 6 characters)
+            username: Username for the new user (3-20 characters)
+            password: Password (must contain uppercase, lowercase, number, and symbol, min 12 chars)
+            role: User role (default: "user")
             
         Returns:
-            Registration response
+            Registration response with access_token and user_id
         """
         data = {
             "username": username,
             "password": password
         }
-        return self._make_request('POST', '/register', data, include_auth=False)
+        if role != "user":
+            data["role"] = role
+            
+        response = self._make_request('POST', '/register', data, include_auth=False)
+        
+        # Store token for future requests
+        if 'access_token' in response:
+            self.access_token = response['access_token']
+            # Calculate token expiration (15 minutes default from backend)
+            self.token_expires_at = datetime.now() + timedelta(minutes=15)
+            
+        return response
     
     def login(self, username: str, password: str) -> Dict[str, Any]:
         """
         Login and obtain access token.
         
         Args:
-            username: Username
-            password: Password
+            username: Username (required)
+            password: Password (required)
             
         Returns:
-            Login response with access_token and token_type
+            Login response with access_token, token_type, and user_id
         """
         data = {
             "username": username,
@@ -137,8 +154,8 @@ class IgniteAPIClient:
         # Store token for future requests
         if 'access_token' in response:
             self.access_token = response['access_token']
-            # Calculate token expiration (30 minutes from backend)
-            self.token_expires_at = datetime.now() + timedelta(minutes=30)
+            # Calculate token expiration (15 minutes from backend)
+            self.token_expires_at = datetime.now() + timedelta(minutes=15)
             
         return response
     
@@ -148,10 +165,126 @@ class IgniteAPIClient:
                 self.token_expires_at is not None and 
                 datetime.now() < self.token_expires_at)
     
+    def get_current_user(self) -> Dict[str, Any]:
+        """
+        Get current authenticated user information.
+        
+        Returns:
+            User information including id, username, and role
+        """
+        return self._make_request('GET', '/auth/me')
+    
+    def refresh_token(self, user_id: str, refresh_token: str) -> Dict[str, Any]:
+        """
+        Refresh the authentication token.
+        
+        Args:
+            user_id: User ID for token refresh
+            refresh_token: Current refresh token
+            
+        Returns:
+            New access token and refresh token
+        """
+        data = {
+            "userID": user_id,
+            "refreshToken": refresh_token
+        }
+        response = self._make_request('PATCH', '/auth/refresh', data, include_auth=False)
+        
+        # Update stored token if refresh successful
+        if 'accessToken' in response:
+            self.access_token = response['accessToken']
+            self.token_expires_at = datetime.now() + timedelta(minutes=15)
+            
+        return response
+    
+    def check_logged_in(self, access_token: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Check if a token is still valid.
+        
+        Args:
+            access_token: Token to check (uses current token if not provided)
+            
+        Returns:
+            Login status information
+        """
+        token_to_check = access_token or self.access_token
+        data = {"accessToken": token_to_check} if token_to_check else {}
+        return self._make_request('GET', '/auth/loggedIn', data)
+    
     def logout(self):
         """Clear authentication token."""
         self.access_token = None
         self.token_expires_at = None
+
+    # User Management Methods
+    def get_all_users(self) -> Dict[str, Any]:
+        """
+        Get all users (requires admin privileges).
+        
+        Returns:
+            List of all users
+        """
+        return self._make_request('GET', '/users')
+    
+    def get_user_by_id(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get a user by their ID.
+        
+        Args:
+            user_id: User ID to retrieve
+            
+        Returns:
+            User information
+        """
+        return self._make_request('GET', f'/users/{user_id}')
+    
+    def update_user(self, user_id: str, username: Optional[str] = None, 
+                   role: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Update a user's information.
+        
+        Args:
+            user_id: User ID to update
+            username: New username (optional)
+            role: New role (optional)
+            
+        Returns:
+            Update response
+        """
+        data = {}
+        if username is not None:
+            data["username"] = username
+        if role is not None:
+            data["role"] = role
+            
+        return self._make_request('PUT', f'/users/{user_id}', data)
+    
+    def delete_user(self, user_id: str) -> Dict[str, Any]:
+        """
+        Delete a user.
+        
+        Args:
+            user_id: User ID to delete
+            
+        Returns:
+            Deletion response
+        """
+        return self._make_request('DELETE', f'/users/{user_id}')
+    
+    def update_user_role(self, user_id: str, role: str) -> Dict[str, Any]:
+        """
+        Update a user's role (admin operation).
+        
+        Args:
+            user_id: User ID to update
+            role: New role to assign
+            
+        Returns:
+            Role update response
+        """
+        data = {"role": role}
+        return self._make_request('PUT', f'/users/{user_id}/role', data)
 
     # Room Management Methods
     def create_room(self, room_name: str, private: bool = False, password: Optional[str] = None) -> Dict[str, Any]:
@@ -236,9 +369,9 @@ class IgniteAPIClient:
             Messages and count
         """
         if limit is not None:
-            endpoint = f'/get_messages/{room_name}/{limit}'
+            endpoint = f'/messages/{room_name}/{limit}'
         else:
-            endpoint = f'/get_messages/{room_name}'
+            endpoint = f'/messages/{room_name}'
             
         return self._make_request('GET', endpoint)
     
@@ -266,6 +399,7 @@ class IgniteAPIClient:
 class WebSocketClient:
     """
     WebSocket client for real-time messaging with the Ignite Chat backend.
+    Works with the simplified username/password authentication system.
     Note: Requires websocket-client package (pip install websocket-client)
     """
     
@@ -413,6 +547,29 @@ def create_websocket_client(token: Optional[str] = None) -> WebSocketClient:
     """Create a new WebSocket client instance."""
     return WebSocketClient(token=token)
 
+def authenticate_and_get_client(username: str, password: str, base_url: str = "http://localhost:8000") -> IgniteAPIClient:
+    """
+    Convenience function to create a client and authenticate in one step.
+    
+    Args:
+        username: Username for authentication
+        password: Password for authentication  
+        base_url: Backend server URL
+        
+    Returns:
+        Authenticated API client
+        
+    Raises:
+        requests.RequestException: If authentication fails
+    """
+    client = IgniteAPIClient(base_url)
+    client.login(username, password)
+    
+    if not client.is_authenticated():
+        raise requests.RequestException("Authentication failed")
+        
+    return client
+
 
 # Example usage
 if __name__ == "__main__":
@@ -426,31 +583,42 @@ if __name__ == "__main__":
         print(f"Root response: {root_response}")
         
         # Register a user (optional, uncomment if needed)
+        # Note: Password must contain uppercase, lowercase, number, and symbol (min 12 chars)
         # print("Registering user...")
-        # register_response = client.register("test_user", "test_password")
+        # register_response = client.register("test_user", "TestPassword123!")
         # print(f"Register response: {register_response}")
         
-        # Login
+        # Login with username and password only
         print("Logging in...")
-        login_response = client.login("cam", "123456")
+        login_response = client.login("cam", "PANcakelover21!")
         print(f"Login response: {login_response}")
         
         if client.is_authenticated():
             print("Successfully authenticated!")
             
+            # Get current user info
+            print("Getting current user info...")
+            user_info = client.get_current_user()
+            print(f"Current user: {user_info}")
+            
             # Create a room
             print("Creating room...")
-            room_response = client.create_room("test_room")
+            room_response = {}
+            try:
+                room_response = client.create_room("neverGeneral")
+            except requests.RequestException as e:
+                if hasattr(e, 'response') and e.response:
+                    print("Room already exists, proceeding...")
             print(f"Room creation response: {room_response}")
             
             # Send a message
             print("Sending message...")
-            message_response = client.send_message("test_room", "Hello from API client!")
+            message_response = client.send_message("neverGeneral", "Hello from API client!")
             print(f"Message response: {message_response}")
             
             # Get messages
             print("Getting messages...")
-            messages_response = client.get_messages("test_room")
+            messages_response = client.get_messages("neverGeneral")
             print(f"Messages response: {messages_response}")
             
         else:

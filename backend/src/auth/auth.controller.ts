@@ -20,11 +20,8 @@ import { loginUserDto } from "../dto/loginUser.dto";
 interface AuthenticatedRequest {
   user: {
     id: string;
-    email: string;
     role: string;
     roles: string[];
-    firstName: string;
-    lastName: string;
     username: string;
   };
 }
@@ -62,7 +59,7 @@ export class AuthController {
   /**
    * Handles user login authentication
    *
-   * @param loginUserDto - The login credentials containing username or email and password
+   * @param loginUserDto - The login credentials containing username and password
    * @returns Promise resolving to authentication result with user data and token on success,
    *          or error response with status 400 if credentials are missing/invalid
    *
@@ -124,9 +121,6 @@ export class AuthController {
       status: 200,
       data: {
         id: req.user.id,
-        email: req.user.email,
-        firstName: req.user.firstName,
-        lastName: req.user.lastName,
         username: req.user.username,
         role: req.user.role,
       },
