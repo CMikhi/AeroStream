@@ -217,7 +217,7 @@ class AeroStream(App):
     /* Floating Result Panel Styles */
     .floating-result-panel {
         layer: overlay;
-        offset: 75% 15; 
+        offset: 75% 15;
         width: 70;
         height: auto;
         min-height: 3;
