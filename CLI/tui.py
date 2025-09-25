@@ -5,6 +5,7 @@ from textual.widgets import Static, Footer
 from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode
+from floating_island import FloatingCommandLine, FloatingResultPanel
 
 def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1.5, brightness_factor: float = 1.2, threshold: int = 150) -> str:
     """Convert an image to ASCII art with increased contrast and brightness, and remove surrounding whitespace.
@@ -73,47 +74,6 @@ class MenuItem(Static):
         return f"[bright_white]{self.icon}[/] [white]{self.label}[/]"
 
 
-class CommandLine(Static):
-    """A dedicated command line widget for handling text input display."""
-    
-    def __init__(self, **kwargs):
-        super().__init__("", **kwargs)
-        self.is_active = False
-        self.text_buffer = ""
-        self._current_content = ""
-    
-    def set_active(self, active: bool):
-        """Set the command line active state."""
-        self.is_active = active
-        if active:
-            self.add_class("active")
-            self.styles.display = "block"
-        else:
-            self.remove_class("active")
-            self.text_buffer = ""
-            self.styles.display = "none"
-        self._update_content()
-    
-    def update_buffer(self, text: str):
-        """Update the command line buffer text."""
-        self.text_buffer = text
-        self._update_content()
-    
-    def _update_content(self):
-        """Update the widget content."""
-        if self.is_active:
-            new_content = f":{self.text_buffer}█"
-        else:
-            new_content = ""
-        
-        # Only update if content has actually changed
-        if new_content != self._current_content:
-            self._current_content = new_content
-            self.update(new_content)
-            # Force a refresh of the entire screen to ensure visibility
-            if self.app:
-                self.app.refresh()
-
 
 class SplashScreen(Static):
     """The main splash screen container."""
@@ -136,12 +96,14 @@ class SplashScreen(Static):
                     # Version info at bottom
                     yield Static("https://homebred-irredeemably-madie.ngrok-free.dev/test\nrolling-4b0a60e", classes="version-info")
         
-        # Command line positioned at bottom left (outside the centered container)
-        yield CommandLine(id="command-line", classes="command-line")
+        # Floating command line island (positioned outside the main flow)
+        yield FloatingCommandLine(id="command-line", classes="floating-command-line hidden")
+        
+        # Floating result panel (positioned underneath the command line)
+        yield FloatingResultPanel(id="result-panel", classes="floating-result-panel hidden")
         
         # Footer with quick commands
         yield Footer()
-
 
 
 class AeroStream(App):
@@ -163,17 +125,20 @@ class AeroStream(App):
         Binding(key="t", action="recent", description="Recent Rooms"),
         Binding(key="c", action="settings", description="Settings"),
         Binding(key="colon", action="command_mode", description="Command mode"),
+        Binding(key="escape", action="escape_mode", description="Exit command mode"),
     ]
     
     CSS = """
     Screen {
         background: #1e1e2e;
         color: white;
+        layers: base overlay;
     }
     
     SplashScreen {
         height: 100%;
         width: 100%;
+        layer: base;
     }
     
     .main-container {
@@ -220,23 +185,69 @@ class AeroStream(App):
         margin-left: 0;
     }
     
-    .command-line {
-        color: #f9e2af;
+    /* Floating Command Line Island Styles */
+    .floating-command-line {
+        layer: overlay;
+        offset: 75% 15;
+        width: 70;
+        height: 5;
         background: #1e1e2e;
-        border: solid #fab387;
+        border: thick #fab387;
         text-align: left;
-        padding: 0 1;
-        height: 3;
-        width: 60;
-        dock: bottom;
+        padding: 1 2;
+        color: #f9e2af;
+        opacity: 0.95;
+    }
+    
+    .floating-command-line.active {
+        background: #313244;
+        border: thick #89b4fa;
+        color: #cdd6f4;
+        opacity: 1.0;
+    }
+    
+    .floating-command-line.hidden {
         display: none;
     }
     
-    .command-line.active {
-        display: block !important;
-        background: #313244;
-        border: solid #89b4fa;
+    .floating-command-line.inactive {
+        visibility: hidden;
+    }
+    
+    /* Floating Result Panel Styles */
+    .floating-result-panel {
+        layer: overlay;
+        offset: 75% 15;
+        width: 70;
+        height: auto;
+        min-height: 3;
+        max-height: 15;
+        background: #1e1e2e;
+        border: thick #6c7086;
+        text-align: left;
+        padding: 1 2;
         color: #cdd6f4;
+        opacity: 0.95;
+        overflow: auto;
+    }
+    
+    .floating-result-panel.result-info {
+        border: thick #89b4fa;
+        color: #cdd6f4;
+    }
+    
+    .floating-result-panel.result-success {
+        border: thick #a6e3a1;
+        color: #a6e3a1;
+    }
+    
+    .floating-result-panel.result-error {
+        border: thick #f38ba8;
+        color: #f38ba8;
+    }
+    
+    .floating-result-panel.hidden {
+        display: none;
     }
     """
 
@@ -246,6 +257,7 @@ class AeroStream(App):
         self.keyboard_handler = KeyboardHandler(self)
         self._setup_keyboard_callbacks()
         self._register_custom_commands()
+        self.command_line_should_stay_visible = False  # Track if command line should stay visible after command execution
     
     def _setup_keyboard_callbacks(self):
         """Set up callbacks for keyboard handler events."""
@@ -253,6 +265,16 @@ class AeroStream(App):
         self.keyboard_handler.on_command_buffer_change = self._on_command_buffer_change
         self.keyboard_handler.on_command_executed = self._on_command_executed
         self.keyboard_handler.on_error = self._on_error
+    
+    def _connect_floating_panels(self):
+        """Connect the floating command line with its result panel."""
+        try:
+            command_line = self.query_one("#command-line", FloatingCommandLine)
+            result_panel = self.query_one("#result-panel", FloatingResultPanel)
+            command_line.set_result_panel(result_panel)
+        except Exception:
+            # Widgets not ready yet, schedule for later
+            self.call_later(self._connect_floating_panels)
     
     def _register_custom_commands(self):
         """Register application-specific commands."""
@@ -299,8 +321,10 @@ class AeroStream(App):
     def _on_mode_change(self, mode: KeyboardMode):
         """Handle keyboard mode changes."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
-            command_line.set_active(mode == KeyboardMode.COMMAND)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
+            # Keep command line visible if it should stay visible or if in command mode
+            should_be_active = (mode == KeyboardMode.COMMAND) or self.command_line_should_stay_visible
+            command_line.set_active(should_be_active)
         except Exception as e:
             # Command line widget not available yet, schedule for next tick
             self.call_later(self._delayed_mode_change, mode)
@@ -308,8 +332,10 @@ class AeroStream(App):
     def _delayed_mode_change(self, mode: KeyboardMode):
         """Handle delayed mode changes when widget isn't ready."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
-            command_line.set_active(mode == KeyboardMode.COMMAND)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
+            # Keep command line visible if it should stay visible or if in command mode
+            should_be_active = (mode == KeyboardMode.COMMAND) or self.command_line_should_stay_visible
+            command_line.set_active(should_be_active)
         except Exception:
             # Still not ready, ignore silently
             pass
@@ -317,7 +343,7 @@ class AeroStream(App):
     def _on_command_buffer_change(self, buffer: str):
         """Handle command buffer changes."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
             command_line.update_buffer(buffer)
         except Exception as e:
             # Widget not available, schedule for later
@@ -326,7 +352,7 @@ class AeroStream(App):
     def _delayed_buffer_change(self, buffer: str):
         """Handle delayed buffer changes."""
         try:
-            command_line = self.query_one("#command-line", CommandLine)
+            command_line = self.query_one("#command-line", FloatingCommandLine)
             command_line.update_buffer(buffer)
         except Exception:
             # Still not ready, ignore silently
@@ -334,35 +360,68 @@ class AeroStream(App):
     
     def _on_command_executed(self, command: str, result):
         """Handle command execution."""
-        if result and isinstance(result, str):
-            self.notify(result)
-        else:
-            self.notify(f"Executed: {command}")
+        # Always hide the command line after command execution
+        self.command_line_should_stay_visible = False
+        
+        try:
+            command_line = self.query_one("#command-line", FloatingCommandLine)
+            
+            # Show result if there's a meaningful return value
+            if result and isinstance(result, str):
+                command_line.show_result(result, "success")
+            
+            # Always hide the command line after execution
+            command_line.set_active(False)
+        except Exception:
+            # Fallback to notify if panels aren't ready and there's a result to show
+            if result and isinstance(result, str):
+                self.notify(result)
     
     def _on_error(self, error: str):
         """Handle errors from keyboard handler."""
-        self.notify(error, severity="error")
+        # Set flag to keep command line visible after error
+        self.command_line_should_stay_visible = True
+        
+        try:
+            command_line = self.query_one("#command-line", FloatingCommandLine)
+            command_line.show_result(error, "error")
+            
+            # Ensure command line stays active after showing error
+            command_line.set_active(True)
+        except Exception:
+            # Fallback to notify if panels aren't ready
+            self.notify(error, severity="error")
     
     # Command handlers
     def _login_command(self):
         """Handle login command."""
-        self.notify("Selected: Login")
+        # Perform login logic here
+        # No return value means no execution message will be shown
+        pass
     
     def _register_command(self):
         """Handle register command."""
-        self.notify("Selected: Register")
+        # Perform register logic here
+        # No return value means no execution message will be shown
+        pass
     
     def _rooms_command(self):
         """Handle rooms command."""
-        self.notify("Selected: Rooms")
+        # Perform rooms navigation logic here
+        # No return value means no execution message will be shown
+        pass
     
     def _recent_command(self):
         """Handle recent rooms command."""
-        self.notify("Selected: Recent Rooms")
+        # Perform recent rooms navigation logic here
+        # No return value means no execution message will be shown
+        pass
     
     def _settings_command(self):
         """Handle settings command."""
-        self.notify("Selected: Settings")
+        # Perform settings navigation logic here
+        # No return value means no execution message will be shown
+        pass
     
     # TODO: Update to variable version function
     def _version_command(self):
@@ -422,44 +481,39 @@ class AeroStream(App):
     def _custom_help_command(self):
         """Handle custom help command with both single-key and colon commands."""
         help_text = """
-╭─ Ignite TUI Help ─────────────────────────────────────────────────╮
-│                                                                   │
-│  Single Key Commands (press directly):                           │
-│    l - Login                    r - Register                     │
-│    p - Rooms                    t - Recent Rooms                 │
-│    c - Settings                 h/? - Help                       │
-│    q - Quit                     : - Command mode                 │
-│                                                                   │
-│  Colon Commands (press : then type):                             │
-│    :help, :h         - Show this help                           │
-│    :quit, :q         - Exit application                         │
-│    :login, :l        - Go to login                              │
-│    :register, :r     - Go to register                           │
-│    :rooms, :p        - Go to rooms                              │
-│    :recent, :t       - Recent rooms                             │
-│    :settings, :config - Settings                                │
-│    :version, :v      - Show version                             │
-│    :status, :st      - Show status                              │
-│    :save, :w         - Save state                               │
-│    :refresh, :reload - Refresh interface                        │
-│                                                                   │
-│  Command Mode Navigation:                                         │
-│    Enter - Execute command      Escape - Cancel                  │
-│    ↑/↓ - Command history        Backspace - Delete char         │
-│                                                                   │
-╰───────────────────────────────────────────────────────────────────╯
-        """
+Colon Commands (press : then type):
+    :help, :h         - Show this help
+    :login, :l        - Go to login
+    :register, :r     - Go to register
+    :rooms, :p        - Go to rooms
+    :recent, :t       - Recent rooms
+    :settings, :config - Settings
+    :version, :v      - Show version
+    :status, :st      - Show status
+    :refresh, :reload - Refresh interface
+"""
         return help_text.strip()
     
     def compose(self) -> ComposeResult:
         yield SplashScreen()
+        # Connect the floating panels after composition
+        self.call_after_refresh(self._connect_floating_panels)
     
     # Action methods for Textual bindings (dummy methods to prevent double execution)
     def action_help(self) -> None:
         """Handle help action from ? key."""
         result = self._custom_help_command()
         if result:
-            self.notify(result)
+            try:
+                command_line = self.query_one("#command-line", FloatingCommandLine)
+                command_line.show_result(result, "info")
+            except Exception:
+                self.notify(result)
+    
+    def action_escape_mode(self) -> None:
+        """Handle escape key to exit command mode."""
+        if hasattr(self, 'keyboard_handler'):
+            self.keyboard_handler.handle_key("escape")
     
     def action_login(self) -> None:
         """Dummy action - KeyboardHandler handles this."""
@@ -489,7 +543,7 @@ class AeroStream(App):
         """Handle keyboard shortcuts using the KeyboardHandler."""
         
         # Keys that Textual bindings will handle (these will call dummy action methods)
-        textual_binding_keys = {"q", "question_mark", "l", "r", "p", "t", "c", "colon"}
+        textual_binding_keys = {"q", "question_mark", "l", "r", "p", "t", "c", "colon", "escape"}
         
         # Special handling for q and ? - only let Textual handle them in normal mode
         if event.key in {"q", "question_mark"}:
@@ -501,6 +555,34 @@ class AeroStream(App):
             # If we're in normal mode, let Textual handle them (help/quit actions)
             else:
                 return  # Let Textual's binding system handle it
+        
+        # Handle enter key to dismiss result panel in normal mode
+        if event.key == "enter" and self.keyboard_handler.mode == KeyboardMode.NORMAL:
+            self.command_line_should_stay_visible = False
+            try:
+                command_line = self.query_one("#command-line", FloatingCommandLine)
+                command_line.hide_result()
+                command_line.set_active(False)  # Hide the command line too
+            except Exception:
+                pass  # Ignore if command line not available
+            return
+        
+        # Handle escape key specially
+        if event.key == "escape":
+            if self.keyboard_handler.mode == KeyboardMode.COMMAND:
+                self.keyboard_handler.handle_key("escape")
+                event.stop()
+                return
+            else:
+                # In normal mode, dismiss result panel and command line
+                self.command_line_should_stay_visible = False
+                try:
+                    command_line = self.query_one("#command-line", FloatingCommandLine)
+                    command_line.hide_result()
+                    command_line.set_active(False)  # Hide the command line too
+                except Exception:
+                    pass  # Ignore if command line not available
+                return
         
         # If this key has a Textual binding, let Textual handle it first (calls dummy method)
         # then let KeyboardHandler also process it for actual functionality
