@@ -1044,10 +1044,12 @@ Colon Commands (press : then type):
         try:
             username_input = self.query_one("#username-input")
             password_input = self.query_one("#password-input")
-            
-            username = username_input.value.strip()
-            password = password_input.value.strip()
-            
+
+            self.notify(f"username: {username_input.value}, password: {password_input.value}")
+
+            username = str(username_input.value).strip()
+            password = str(password_input.value).strip()
+
             if not username or not password:
                 self.notify("Please enter both username and password", severity="error")
                 return
@@ -1055,11 +1057,15 @@ Colon Commands (press : then type):
             # TODO: Add actual authentication logic here
             # For now, simulate successful login
             self.is_authenticated = True
+            # Get reference to splash screen
+            self.splash_screen = self.query_one(SplashScreen)
+            # Switch to main menu
             self.splash_screen.switch_to_main_menu(username)
             self.notify(f"Welcome, {username}!", severity="information")
             
         except Exception as e:
             self.notify("Login failed. Please try again.", severity="error")
+            self.notify(str(e), severity="error")
     
     def _handle_register(self):
         """Handle register button press."""
