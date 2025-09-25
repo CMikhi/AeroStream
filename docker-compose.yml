@@ -5,9 +5,14 @@ services:
     build: .
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/src/.env
     environment:
-      - PYTHONPATH=/app
+      - NODE_ENV=production
+      - PORT=8000
       - DATABASE_PATH=/app/data/database.db
+      # Ensure JWT secret present even if env_file path changes later
+      - JWT_SECRET=${JWT_SECRET:-your_super_secret_jwt_key_here_make_it_long_and_random}
     volumes:
       # Persist database data
       - database_data:/app/data
@@ -15,7 +20,7 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/', timeout=10)"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/"]
       interval: 30s
       timeout: 10s
       retries: 3

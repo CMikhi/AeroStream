@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket Chat Test</title>
+    <!-- Socket.IO Client Library -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -132,6 +134,7 @@
             color: #e2e8f0;
             font-size: 14px;
             transition: all 0.3s ease;
+            width: calc(50% - 8px);
         }
 
         input:focus, select:focus {
@@ -313,13 +316,17 @@
         <h3>🔐 Authentication</h3>
         <form onsubmit="return false;">
             <input type="text" id="username" placeholder="Enter username">
+            <input type="email" id="email" placeholder="Enter email">
+            <input type="text" id="firstName" placeholder="First name" style="display: none;">
+            <input type="text" id="lastName" placeholder="Last name" style="display: none;">
             <input type="password" id="password" placeholder="Enter password">
             <button type="button" onclick="login()">Login</button>
-            <button type="button" class="register-btn" onclick="register()">Register</button>
+            <button type="button" class="register-btn" onclick="toggleRegisterMode()">Register</button>
+            <button type="button" id="confirmRegister" class="register-btn" onclick="register()" style="display: none;">Create Account</button>
             <button type="button" class="logout-btn" onclick="logout()">Logout</button>
         </form>
         <div class="help-text">
-            💡 New user? Click "Register" to create an account, then "Login" to access the chat.
+            💡 New user? Click "Register" to show registration fields, then "Create Account".
         </div>
         <div id="token"></div>
     </div>
@@ -374,30 +381,26 @@
     </div>
 
     <script>
-        let ws = null;
+        let socket = null;
         let token = null;
         let currentUser = null;
         let currentRoom = null;
 
-        // Get the current host and port dynamically
+        // Backend configuration - NestJS server runs on port 8000
         const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.hostname;
-        const port = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
+        const backendPort = '8000'; // NestJS backend port
         
-        // If we're on a different port (like when served from the FastAPI server), use that
-        const baseUrl = `${protocol}//${host}:${port}`;
-        const wsBaseUrl = `${wsProtocol}//${host}:${port}`;
+        const baseUrl = `${protocol}//${host}:${backendPort}`;
         
         console.log('Base URL:', baseUrl);
-        console.log('WebSocket Base URL:', wsBaseUrl);
 
         async function login() {
-            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             
-            if (!username || !password) {
-                addMessage('system', 'Please enter both username and password');
+            if (!email || !password) {
+                addMessage('system', 'Please enter both email and password');
                 return;
             }
             
@@ -408,7 +411,7 @@
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ email, password })
                 });
                 
                 if (response.ok) {
@@ -416,22 +419,47 @@
                     token = data.access_token;
                     document.getElementById('token').innerHTML = `<strong>🎫 Token:</strong> ${token}`;
                     saveLoginState(); // Save login state to localStorage
-                    addMessage('system', '✅ Login successful!');
+                    addMessage('system', `✅ ${data.message || 'Login successful!'}`);
                 } else {
                     const error = await response.json();
-                    addMessage('system', `❌ Login failed: ${error.detail}`);
+                    addMessage('system', `❌ Login failed: ${error.message || 'Unknown error'}`);
                 }
             } catch (error) {
                 addMessage('system', `❌ Login error: ${error.message}`);
             }
         }
 
+        function toggleRegisterMode() {
+            const emailField = document.getElementById('email');
+            const firstNameField = document.getElementById('firstName');
+            const lastNameField = document.getElementById('lastName');
+            const registerBtn = document.querySelector('button[onclick="toggleRegisterMode()"]');
+            const confirmBtn = document.getElementById('confirmRegister');
+            
+            if (emailField.style.display === 'none') {
+                emailField.style.display = 'block';
+                firstNameField.style.display = 'block';
+                lastNameField.style.display = 'block';
+                registerBtn.style.display = 'none';
+                confirmBtn.style.display = 'block';
+            } else {
+                emailField.style.display = 'none';
+                firstNameField.style.display = 'none';
+                lastNameField.style.display = 'none';
+                registerBtn.style.display = 'block';
+                confirmBtn.style.display = 'none';
+            }
+        }
+
         async function register() {
             const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
+            const firstName = document.getElementById('firstName').value;
+            const lastName = document.getElementById('lastName').value;
             const password = document.getElementById('password').value;
             
-            if (!username || !password) {
-                addMessage('system', 'Please enter both username and password');
+            if (!username || !email || !firstName || !lastName || !password) {
+                addMessage('system', 'Please fill in all fields for registration');
                 return;
             }
             
@@ -442,15 +470,26 @@
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ 
+                        username, 
+                        email, 
+                        firstName, 
+                        lastName, 
+                        password 
+                    })
                 });
                 
                 if (response.ok) {
                     const data = await response.json();
-                    addMessage('system', '✅ Registration successful! You can now login.');
+                    token = data.access_token;
+                    document.getElementById('token').innerHTML = `<strong>🎫 Token:</strong> ${token}`;
+                    saveLoginState();
+                    addMessage('system', `✅ ${data.message || 'Registration successful!'}`);
+                    // Hide registration fields after successful registration
+                    toggleRegisterMode();
                 } else {
                     const error = await response.json();
-                    addMessage('system', `❌ Registration failed: ${error.detail}`);
+                    addMessage('system', `❌ Registration failed: ${error.message || 'Unknown error'}`);
                 }
             } catch (error) {
                 addMessage('system', `❌ Registration error: ${error.message}`);
@@ -458,10 +497,10 @@
         }
 
         function logout() {
-            // Disconnect WebSocket if connected
-            if (ws) {
-                ws.close();
-                ws = null;
+            // Disconnect Socket.IO if connected
+            if (socket) {
+                socket.disconnect();
+                socket = null;
             }
             
             // Clear login state
@@ -480,8 +519,8 @@
 
         async function createRoom() {
             if (!token) {
-            document.getElementById('roomStatus').innerHTML = '<span style="color: #ef4444;">Please login first</span>';
-            return;
+                document.getElementById('roomStatus').innerHTML = '<span style="color: #ef4444;">Please login first</span>';
+                return;
             }
 
             const roomName = document.getElementById('newRoomName').value.trim();
@@ -489,39 +528,41 @@
             const roomPassword = document.getElementById('roomPassword').value.trim();
 
             if (!roomName) {
-            document.getElementById('roomStatus').innerHTML = '<span style="color: #ef4444;">Please enter a room name</span>';
-            return;
+                document.getElementById('roomStatus').innerHTML = '<span style="color: #ef4444;">Please enter a room name</span>';
+                return;
             }
 
             const roomData = { room_name: roomName };
             if (roomType === 'private') {
                 roomData.private = true;
-                roomData.password = roomPassword;
+                if (roomPassword) {
+                    roomData.password = roomPassword;
+                }
             }
 
             try {
-            const response = await fetch(`${baseUrl}/create_room`, {
-                method: 'POST',
-                headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(roomData)
-            });
+                const response = await fetch(`${baseUrl}/create_room`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(roomData)
+                });
 
-            if (response.ok) {
-                const data = await response.json();
-                document.getElementById('roomStatus').innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
-                document.getElementById('roomName').value = roomName; // Auto-fill the connect room field
-                document.getElementById('newRoomName').value = ''; // Clear the input
-                document.getElementById('roomPassword').value = ''; // Clear the password input
-                addMessage('system', `🏠 Room '${roomName}' created successfully!`);
-            } else {
-                const error = await response.json();
-                document.getElementById('roomStatus').innerHTML = `<span style="color: #ef4444;">❌ Failed to create room: ${error.detail}</span>`;
-            }
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('roomStatus').innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
+                    document.getElementById('roomName').value = roomName; // Auto-fill the connect room field
+                    document.getElementById('newRoomName').value = ''; // Clear the input
+                    document.getElementById('roomPassword').value = ''; // Clear the password input
+                    addMessage('system', `🏠 ${data.message}`);
+                } else {
+                    const error = await response.json();
+                    document.getElementById('roomStatus').innerHTML = `<span style="color: #ef4444;">❌ Failed to create room: ${error.message || 'Unknown error'}</span>`;
+                }
             } catch (error) {
-            document.getElementById('roomStatus').innerHTML = `<span style="color: #ef4444;">❌ Error creating room: ${error.message}</span>`;
+                document.getElementById('roomStatus').innerHTML = `<span style="color: #ef4444;">❌ Error creating room: ${error.message}</span>`;
             }
         }
 
@@ -557,52 +598,91 @@
 
                 if (!joinResponse.ok) {
                     const error = await joinResponse.json();
-                    addMessage('system', `❌ Failed to join room: ${error.detail}`);
+                    addMessage('system', `❌ Failed to join room: ${error.message || 'Unknown error'}`);
                     return;
                 }
 
-                // If join was successful, proceed with WebSocket connection
+                // If join was successful, proceed with Socket.IO connection
                 addMessage('system', '🔓 Room access granted, connecting...');
                 document.getElementById('status').className = 'status disconnected pulse';
                 document.getElementById('status').textContent = 'Connecting...';
 
-                ws = new WebSocket(`${wsBaseUrl}/ws/${roomName}`);
+                // Create Socket.IO connection with specific namespace for the room
+                const namespace = `/ws/${roomName}`;
+                socket = io(baseUrl + namespace);
+                currentRoom = roomName;
                 
-                ws.onopen = function() {
-                    console.log('WebSocket opened');
+                socket.on('connect', () => {
+                    console.log('Socket.IO connected');
                     document.getElementById('status').textContent = 'Authenticating...';
                     // Send authentication
-                    ws.send(JSON.stringify({
-                        type: 'auth',
-                        token: token
-                    }));
-                };
+                    socket.emit('auth', { token: token });
+                });
 
-                ws.onmessage = function(event) {
-                    try {
-                        console.log('WebSocket message received:', event.data);
-                        const data = JSON.parse(event.data);
-                        console.log('Parsed WebSocket data:', data);
-                        handleWebSocketMessage(data);
-                        console.log('Message handling completed successfully');
-                    } catch (error) {
-                        console.error('Error parsing WebSocket message:', error);
-                        addMessage('system', `❌ Error parsing message: ${error.message}`);
-                    }
-                };
+                socket.on('auth_success', (data) => {
+                    console.log('Authentication successful:', data);
+                    currentUser = data.user.username; // Store current user
+                    document.getElementById('status').className = 'status connected';
+                    document.getElementById('status').textContent = `Connected to ${data.room}`;
+                    addMessage('system', `✅ Connected to room '${data.room}' as ${data.user.username}`);
+                });
 
-                ws.onclose = function(event) {
-                    console.log('WebSocket closed:', event.code, event.reason);
-                    console.log('Close event details:', event);
+                socket.on('message_history', (data) => {
+                    console.log('Message history received:', data.data.length, 'messages');
+                    // Clear existing messages first
+                    document.getElementById('messages').innerHTML = '';
+                    data.data.forEach(message => {
+                        // Check if this message is from the current user
+                        const isMyMessage = message.username === currentUser;
+                        addMessage('chat', `${message.username}: ${message.content}`, isMyMessage);
+                    });
+                });
+
+                socket.on('new_message', (data) => {
+                    console.log('New message received:', data.data);
+                    const message = data.data;
+                    // This is always from another user (new_message event)
+                    addMessage('chat', `${message.username}: ${message.content}`, false);
+                });
+
+                socket.on('message_sent', (data) => {
+                    console.log('Message sent confirmation:', data.data);
+                    const message = data.data;
+                    // Display our own message when server confirms it was sent
+                    addMessage('chat', `${message.username}: ${message.content}`, true);
+                });
+
+                socket.on('user_joined', (data) => {
+                    addMessage('system', data.message);
+                });
+
+                socket.on('user_left', (data) => {
+                    addMessage('system', data.message);
+                });
+
+                socket.on('connection_replaced', (data) => {
+                    addMessage('system', `⚠️ ${data.message}`);
+                });
+
+                socket.on('force_disconnect', (data) => {
+                    addMessage('system', `🚫 ${data.message}`);
+                });
+
+                socket.on('error', (data) => {
+                    console.error('Socket.IO error:', data);
+                    addMessage('system', `❌ ${data.message}`);
+                });
+
+                socket.on('disconnect', (reason) => {
+                    console.log('Socket.IO disconnected:', reason);
                     document.getElementById('status').className = 'status disconnected';
                     document.getElementById('status').textContent = 'Disconnected';
-                    addMessage('system', `🔌 WebSocket connection closed (Code: ${event.code})`);
-                };
+                    addMessage('system', `🔌 Disconnected: ${reason}`);
+                });
 
-                ws.onerror = function(error) {
-                    console.error('WebSocket error:', error);
-                    addMessage('system', `❌ WebSocket error: ${error.message || 'Unknown error'}`);
-                };
+                socket.on('pong', () => {
+                    console.log('Received pong from server');
+                });
 
             } catch (error) {
                 addMessage('system', `❌ Connection error: ${error.message}`);
@@ -610,123 +690,14 @@
         }
 
         function disconnect() {
-            if (ws) {
-                ws.close();
-                ws = null;
+            if (socket) {
+                socket.disconnect();
+                socket = null;
             }
         }
 
-        function handleWebSocketMessage(data) {
-            try {
-                console.log('=== HANDLE MESSAGE START ===');
-                console.log('Handling WebSocket message:', data);
-                console.log('WebSocket state at message start:', ws ? ws.readyState : 'null');
-                
-                switch (data.type) {
-                    case 'auth_success':
-                        currentUser = data.user;
-                        currentRoom = data.room;
-                        document.getElementById('status').className = 'status connected';
-                        document.getElementById('status').textContent = `🟢 Connected to ${currentRoom} as ${currentUser.username}`;
-                        addMessage('system', `🎉 Connected to room: ${currentRoom}`);
-                        break;
-
-                    case 'message_history':
-                        document.getElementById('messages').innerHTML = '';
-                        if (data.data && Array.isArray(data.data)) {
-                            data.data.forEach(message => {
-                                const isMyMessage = currentUser && message.username === currentUser.username;
-                                addMessage('message', `${message.username}: ${message.content}`, isMyMessage);
-                            });
-                        }
-                        break;
-
-                    case 'new_message':
-                        console.log('Processing new_message from other user');
-                        if (data.data) {
-                            const msg = data.data;
-                            const isMyMessage = currentUser && msg.username === currentUser.username;
-                            console.log('Adding new message to UI:', msg);
-                            addMessage('message', `${msg.username}: ${msg.content}`, isMyMessage);
-                            console.log('New message added to UI successfully');
-                        }
-                        break;
-
-                    case 'message_sent':
-                        console.log('Processing message_sent confirmation');
-                        if (data.data) {
-                            const msg = data.data;
-                            console.log('Adding my sent message to UI:', msg);
-                            addMessage('message', `${msg.username}: ${msg.content}`, true);
-                            console.log('Sent message added to UI successfully');
-                        }
-                        break;
-
-                    case 'user_joined':
-                    case 'user_left':
-                        if (data.data && data.data.message) {
-                            addMessage('system', `👥 ${data.data.message}`);
-                        }
-                        break;
-
-                    case 'connection_replaced':
-                        addMessage('system', `🔄 Connection replaced: ${data.message || 'Your connection was replaced by a new one'}`);
-                        // Close current connection gracefully
-                        if (ws) {
-                            ws.close();
-                            ws = null;
-                        }
-                        document.getElementById('status').className = 'status disconnected';
-                        document.getElementById('status').textContent = 'Disconnected (Connection Replaced)';
-                        break;
-
-                    case 'force_disconnect':
-                        addMessage('system', `⚠️ Forced disconnect: ${data.message || 'Disconnected by server'}`);
-                        // Close current connection gracefully
-                        if (ws) {
-                            ws.close();
-                            ws = null;
-                        }
-                        document.getElementById('status').className = 'status disconnected';
-                        document.getElementById('status').textContent = 'Disconnected (Forced)';
-                        break;
-
-                    case 'error':
-                        const errorMessage = data.message || 'Unknown error';
-                        addMessage('system', `❌ Error: ${errorMessage}`);
-                        
-                        // Handle specific error types
-                        if (errorMessage.includes('Connection refused') || errorMessage.includes('already connected')) {
-                            addMessage('system', '⚠️ You are already connected to this room from another tab or device.');
-                            // Don't try to reconnect automatically for this type of error
-                            document.getElementById('status').className = 'status disconnected';
-                            document.getElementById('status').textContent = 'Connection Refused (Already Connected)';
-                        }
-                        break;
-
-                    case 'pong':
-                        console.log('Received pong');
-                        break;
-
-                    default:
-                        console.log('Unknown message type:', data.type);
-                        break;
-                }
-                
-                console.log('WebSocket state at message end:', ws ? ws.readyState : 'null');
-                console.log('=== HANDLE MESSAGE END ===');
-                
-                // Check WebSocket state after a small delay
-                setTimeout(() => {
-                    console.log('WebSocket state 50ms after message handling:', ws ? ws.readyState : 'null');
-                }, 50);
-                
-            } catch (error) {
-                console.error('Error handling WebSocket message:', error);
-                addMessage('system', `❌ Error processing message: ${error.message}`);
-                console.log('=== HANDLE MESSAGE ERROR ===');
-            }
-        }
+        // Legacy WebSocket message handler - replaced by Socket.IO event handlers
+        /* function handleWebSocketMessage removed - using Socket.IO events instead */
 
         function sendMessage() {
             const messageInput = document.getElementById('messageInput');
@@ -734,12 +705,11 @@
             
             console.log('=== SEND MESSAGE START ===');
             console.log('Attempting to send message:', message);
-            console.log('WebSocket state:', ws ? ws.readyState : 'null');
-            console.log('WebSocket ready states: CONNECTING=0, OPEN=1, CLOSING=2, CLOSED=3');
+            console.log('Socket state:', socket ? socket.connected : 'null');
             
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                addMessage('system', '❌ Not connected to WebSocket');
-                console.log('WebSocket not connected or not open');
+            if (!socket || !socket.connected) {
+                addMessage('system', '❌ Not connected to chat');
+                console.log('Socket not connected');
                 return;
             }
 
@@ -749,28 +719,14 @@
             }
 
             try {
-                const messageData = {
-                    type: 'send_message',
-                    message: message
-                };
-                console.log('Sending WebSocket message:', messageData);
-                console.log('WebSocket state before send:', ws.readyState);
+                console.log('Sending Socket.IO message:', message);
                 
-                ws.send(JSON.stringify(messageData));
+                // Send via Socket.IO - don't display immediately, wait for server confirmation
+                socket.emit('send_message', { message: message });
                 
-                console.log('WebSocket state after send:', ws.readyState);
                 messageInput.value = '';
-                console.log('Message sent successfully');
+                console.log('Message sent to server, waiting for confirmation');
                 console.log('=== SEND MESSAGE END ===');
-                
-                // Add a small delay to see if the connection closes after sending
-                setTimeout(() => {
-                    console.log('WebSocket state 100ms after send:', ws ? ws.readyState : 'null');
-                }, 100);
-                
-                setTimeout(() => {
-                    console.log('WebSocket state 500ms after send:', ws ? ws.readyState : 'null');
-                }, 500);
                 
             } catch (error) {
                 console.error('Error sending message:', error);
@@ -801,6 +757,10 @@
             if (token) {
                 localStorage.setItem('chatToken', token);
                 localStorage.setItem('chatUsername', document.getElementById('username').value);
+                const email = document.getElementById('email').value;
+                if (email) {
+                    localStorage.setItem('chatEmail', email);
+                }
             }
         }
 
@@ -808,10 +768,14 @@
         function loadLoginState() {
             const savedToken = localStorage.getItem('chatToken');
             const savedUsername = localStorage.getItem('chatUsername');
+            const savedEmail = localStorage.getItem('chatEmail');
             
             if (savedToken && savedUsername) {
                 token = savedToken;
                 document.getElementById('username').value = savedUsername;
+                if (savedEmail) {
+                    document.getElementById('email').value = savedEmail;
+                }
                 document.getElementById('token').innerHTML = `<strong>🎫 Token:</strong> ${token}`;
                 addMessage('system', '🔄 Restored login session');
                 return true;
@@ -823,6 +787,7 @@
         function clearLoginState() {
             localStorage.removeItem('chatToken');
             localStorage.removeItem('chatUsername');
+            localStorage.removeItem('chatEmail');
             token = null;
             document.getElementById('token').innerHTML = '';
         }
@@ -872,23 +837,19 @@
 
         // Send ping every 30 seconds to keep connection alive
         setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'ping' }));
+            if (socket && socket.connected) {
+                socket.emit('ping');
             }
         }, 30000);
 
-        // Monitor WebSocket connection state every second for debugging
-        // Debug flag: set to true to enable WebSocket state logging
+        // Monitor Socket.IO connection state every second for debugging
+        // Debug flag: set to true to enable connection state logging
         const DEBUG = false;
 
         if (DEBUG) {
             setInterval(() => {
-                if (ws) {
-                    const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-                    const currentState = states[ws.readyState] || 'UNKNOWN';
-                    if (ws.readyState !== WebSocket.OPEN) {
-                        console.log(`WebSocket state check: ${currentState} (${ws.readyState})`);
-                    }
+                if (socket) {
+                    console.log(`Socket.IO connected: ${socket.connected}`);
                 }
             }, 1000);
         }

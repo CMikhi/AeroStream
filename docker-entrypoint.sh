@@ -1,13 +1,17 @@
-#!/bin/bash
+#!/bin/sh
 
-# Docker entrypoint script for the FastAPI backend
+# Docker entrypoint script for the NestJS backend
 set -e
 
-echo "Starting IgniteDemo Backend Container..."
+echo "Starting IgniteDemo NestJS Backend Container (entrypoint)..."
 
 # Set default values if environment variables are not set
 DATABASE_PATH=${DATABASE_PATH:-/app/data/database.db}
-PORT=${PORT:-8000}
+PORT=${PORT:-3000}
+NODE_ENV=${NODE_ENV:-production}
+
+echo "Environment: $NODE_ENV"
+echo "Port: $PORT"
 
 # Create data directory if it doesn't exist
 mkdir -p "$(dirname "$DATABASE_PATH")"
@@ -23,14 +27,17 @@ if [ ! -f "$DATABASE_PATH" ]; then
 fi
 
 # Update the database path in the backend configuration if needed
-# The backend already looks for database.db in the parent directory of backend/
-# So we'll create a symlink to maintain compatibility
+# Create a symlink to maintain compatibility with the NestJS application
 if [ "$DATABASE_PATH" != "/app/database.db" ]; then
     ln -sf "$DATABASE_PATH" /app/database.db
 fi
 
 echo "Database configured at: $DATABASE_PATH"
-echo "Starting FastAPI application on port $PORT..."
+
+# Wait a moment to ensure all setup is complete
+sleep 2
+
+echo "Starting NestJS application on port $PORT..."
 
 # Execute the command passed to the container
 exec "$@"

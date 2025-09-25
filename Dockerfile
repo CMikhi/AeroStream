@@ -1,55 +1,50 @@
-# Use Python 3.11 slim image for production
-FROM python:3.11-slim
+###############################
+# Builder Stage
+###############################
+FROM node:22-alpine AS builder
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
+WORKDIR /app/backend
+
+# Copy only backend package manifests first for caching
+COPY backend/package*.json ./
+
+# Install all dependencies (dev included for build)
+RUN npm ci
+
+# Copy backend source
+COPY backend/ .
+
+# Build the NestJS application (outputs to dist/)
+RUN npm run build
+
+###############################
+# Production Stage
+###############################
+FROM node:22-alpine AS production
+
+ENV NODE_ENV=production \
     PORT=8000
 
-# Set work directory
-WORKDIR /app
+WORKDIR /app/backend
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
 
-# Copy requirements first for better Docker layer caching
-COPY requirements.txt .
+# Copy package manifests then install production deps only
+COPY backend/package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Copy built application
+COPY --from=builder /app/backend/dist ./dist
 
-# Copy backend directory
-COPY backend/ ./backend/
+# Copy entrypoint script from repository root
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
-# Copy database and websocket test file (if they exist)
-COPY database.db* ./
-COPY websocket_test.html ./
+EXPOSE 3000
 
-# Create directory for database if it doesn't exist
-RUN mkdir -p /app/data
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=10s \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/ || exit 1
 
-# Copy entrypoint script
-COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
-
-# Create non-root user for security
-RUN adduser --disabled-password --gecos '' --shell /bin/bash user && \
-    chown -R user:user /app
-USER user
-
-# Expose port
-EXPOSE $PORT
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/', timeout=10)"
-
-# Use entrypoint script
-ENTRYPOINT ["./docker-entrypoint.sh"]
-
-# Default command
-CMD ["uvicorn", "backend.backend:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["dumb-init", "/app/docker-entrypoint.sh"]
+CMD ["node", "dist/main.js"]
