@@ -1,0 +1,97 @@
+Screen {
+    background: #1e1e2e;
+
+}
+#roomBar {
+    width: 20%;             /* narrow strip on left *//* gives a distinct background */
+    color: white;           /* text color */
+    border: tall round #b4befe 50%;     /* creates a visible border instead of outline */
+    padding: 1;             /* spacing inside the sidebar */
+    color: white;
+    background: #1e1e2e;
+    margin: 1;
+
+}
+
+#usersBar {
+    width: 20%;             /* narrow strip on left *//* gives a distinct background */
+    color: white;           /* text color */
+    border: tall round #b4befe 50%;     /* creates a visible border instead of outline */
+    padding: 1;             /* spacing inside the sidebar */
+    color: white;
+    background: #1e1e2e;
+    margin: 1;
+
+}
+
+#main {
+    color: white;
+    border: tall round #b4befe 50%;
+    background: #1e1e2e;
+    padding: 1;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+#username_prompt {
+    color: #b4befe;
+    padding: 1;
+    margin-bottom: 1;
+}
+
+#next_button{
+    background: #1e1e2e;
+    color: white;
+    text-align: center;
+}
+
+/* Modal styles */
+/* CreateRoomModal {
+    align: center middle;
+} */
+
+#modal-content {
+    background: #1e1e2e;
+    border: tall round #b4befe 50%;
+    padding: 1 2;
+    width: 60;
+    height: auto;
+}
+
+#modal-title {
+    text-align: center;
+    color: #b4befe;
+    padding: 1;
+    /* text-style: bold; */
+}
+
+#room-name-input {
+    margin: 1 0;
+}
+
+#modal-buttons {
+    margin-top: 1;
+    /* align: center middle; */
+}
+
+#public-button {
+    background: #74c7ec;
+    margin-right: 1;
+}
+
+#private-button {
+    background: #f38ba8;
+    margin-right: 1;
+}
+
+#cancel-button {
+    background: #45475a;
+}
+
+.line {
+  color: gray;
+}
+
+.label {
+  color: cyan;
+}
