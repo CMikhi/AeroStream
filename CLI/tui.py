@@ -482,6 +482,11 @@ class AeroStream(App):
         Binding(key="r", action="rooms", description="Rooms", show=False),
         Binding(key="h", action="recent", description="Recent", show=False),
         Binding(key="s", action="settings", description="Settings", show=False),
+        Binding(key="l", action="login", description="Login"),
+        Binding(key="r", action="register", description="Register"),
+        Binding(key="p", action="rooms", description="Rooms"),
+        Binding(key="t", action="recent", description="Recent Rooms"),
+        Binding(key="c", action="settings", description="Settings"),
         Binding(key="colon", action="command_mode", description="Command mode"),
         Binding(key="escape", action="escape_mode", description="Exit command mode"),
     ]
@@ -781,6 +786,11 @@ class AeroStream(App):
         
         # Re-register single-key commands since Textual bindings are disabled (show=False)
         # These will now be handled exclusively by KeyboardHandler
+        self.keyboard_handler.register_single_key("l", self._login_command)
+        self.keyboard_handler.register_single_key("r", self._register_command)
+        self.keyboard_handler.register_single_key("p", self._rooms_command)
+        self.keyboard_handler.register_single_key("t", self._recent_command)
+        self.keyboard_handler.register_single_key("c", self._settings_command)
         self.keyboard_handler.register_single_key("r", self._rooms_command)
         self.keyboard_handler.register_single_key("h", self._recent_command)
         self.keyboard_handler.register_single_key("s", self._settings_command)
@@ -998,17 +1008,25 @@ Colon Commands (press : then type):
         if hasattr(self, 'keyboard_handler'):
             self.keyboard_handler.handle_key("escape")
     
+    def action_login(self) -> None:
+        """Dummy action - KeyboardHandler handles this."""
+        pass
+    
+    def action_register(self) -> None:
+        """Dummy action - KeyboardHandler handles this."""
+        pass
+    
     def action_rooms(self) -> None:
-        """Handle rooms action."""
-        self._rooms_command()
+        """Dummy action - KeyboardHandler handles this."""
+        pass
     
     def action_recent(self) -> None:
-        """Handle recent action."""
-        self._recent_command()
+        """Dummy action - KeyboardHandler handles this."""
+        pass
     
     def action_settings(self) -> None:
-        """Handle settings action."""
-        self._settings_command()
+        """Dummy action - KeyboardHandler handles this."""
+        pass
     
     def action_command_mode(self) -> None:
         """Dummy action - KeyboardHandler handles this."""
@@ -1120,6 +1138,9 @@ Colon Commands (press : then type):
             # For colon specifically, we want KeyboardHandler to handle the command mode logic
             if event.key == "colon":
                 self.keyboard_handler.handle_key(":")
+            elif event.key in {"l", "r", "p", "t", "c"}:
+                # For other bound keys, let KeyboardHandler process them too
+                self.keyboard_handler.handle_key(event.key)
             return
         
         # For all other keys, use the keyboard handler normally
