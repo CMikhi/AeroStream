@@ -446,16 +446,16 @@ class MainMenuScreen(Static):
                 username = getattr(splash_screen, 'username', 'User')
                 splash_screen.switch_to_rooms(username)
             elif event.action == "recent_rooms":
-                self.app.notify("Recent Rooms - Coming Soon!", severity="information")
+                pass
             elif event.action == "settings":
-                self.app.notify("Settings - Coming Soon!", severity="information")
+                pass
             elif event.action == "logout":
                 # Get the app and handle logout
                 app = self.app
                 if hasattr(app, '_handle_logout'):
                     app._handle_logout()
                 else:
-                    app.notify("Logging out...", severity="information")
+                    pass
         except Exception as e:
             self.app.notify(f"Navigation error: {str(e)}", severity="error")
         
@@ -604,6 +604,34 @@ class CreateRoomModal(ModalScreen):
                 self.dismiss((room_name, is_public))
 
 
+class JoinRoomModal(ModalScreen):
+    """Modal screen for joining existing rooms by name (optional password)."""
+    def compose(self) -> ComposeResult:
+        yield Center(
+            Vertical(
+                Static("Join Room", classes="modal-title"),
+                Input(placeholder="Room Name", id="join-room-name-input", classes="modal-input"),
+                Input(placeholder="Password (optional)", password=True, id="join-room-pass-input", classes="modal-input"),
+                Horizontal(
+                    Button("Join", variant="primary", id="join-confirm-btn", classes="modal-button"),
+                    Button("Cancel", id="join-cancel-btn", classes="modal-button"),
+                    classes="modal-buttons"
+                ),
+                classes="modal-container"
+            ),
+            classes="modal-center"
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "join-cancel-btn":
+            self.dismiss()
+        elif event.button.id == "join-confirm-btn":
+            room_name = self.query_one("#join-room-name-input").value.strip()
+            password = self.query_one("#join-room-pass-input").value.strip()
+            if room_name:
+                self.dismiss((room_name, password or None))
+
+
 class ClickableRoom(Static):
     """A clickable room label that can be selected."""
     
@@ -644,11 +672,11 @@ class RoomChatWidget(Static):
         self.chat_input = None
         self.room_counter = 0
         
-        # Initialize with testui room only
+        # Initialize with global room only
         self.rooms = {
-            "testui": {"users": [username], "messages": []}
+            "global": {"users": [username], "messages": []}
         }
-        self.current_room = "testui"
+        self.current_room = "global"
         self.users = [username]  # Start with current user
         
         # Polling timer for updates (WebSocket disabled)
@@ -659,36 +687,33 @@ class RoomChatWidget(Static):
         self._join_default_room()
 
     def _join_default_room(self):
-        """Join the default testui room via API, creating it if necessary."""
+        """Join the default global room via API, creating it if necessary."""
         try:
             if self.api_client and self.api_client.is_authenticated():
-                # First try to join the testui room
+                # First try to join the global room
                 try:
-                    response = self.api_client.join_room("testui")
+                    response = self.api_client.join_room("global")
                     if response and "message" in response:
-                        self.app.notify("Joined testui room", severity="success")
                         return
                 except Exception as join_error:
                     # If joining fails, try to create the room first
-                    self.app.notify("testui room not found, creating it...", severity="information")
+                    # silent: create if missing
                     try:
-                        create_response = self.api_client.create_room("testui", private=False)
+                        create_response = self.api_client.create_room("global", private=False)
                         if create_response and "message" in create_response:
                             # Now try to join the newly created room
-                            response = self.api_client.join_room("testui")
+                            response = self.api_client.join_room("global")
                             if response and "message" in response:
-                                self.app.notify("Created and joined testui room", severity="success")
                                 return
-                        self.app.notify("Could not create testui room, using local mode", severity="warning")
                     except Exception as create_error:
-                        self.app.notify(f"Failed to create room: {str(create_error)}", severity="warning")
+                        pass
                 
                 # If we get here, both join and create failed
-                self.app.notify("Using local testui room (API unavailable)", severity="information")
+                pass
             else:
-                self.app.notify("Not authenticated - using offline mode", severity="warning")
+                pass
         except Exception as e:
-            self.app.notify(f"Error with testui room setup: {str(e)}", severity="error")
+            self.app.notify(f"Error with global room setup: {str(e)}", severity="error")
 
     def compose(self) -> ComposeResult:
         """Create the room chat interface layout."""
@@ -778,6 +803,14 @@ class RoomChatWidget(Static):
         )
         self.roomBar.mount(new_room_button)
 
+        # Add Join Room button
+        join_room_button = ClickableRoom(
+            "join_room",
+            "󰭻 Join Room",
+            classes="room-action"
+        )
+        self.roomBar.mount(join_room_button)
+
     def _refresh_user_list(self) -> None:
         """Update the users bar with current users."""
         self.usersBar.remove_children()
@@ -807,7 +840,6 @@ class RoomChatWidget(Static):
                 if response and "messages" in response:
                     # Format API messages to match our expected format
                     api_messages = response["messages"]
-                    self.app.notify(f"Fetched {len(api_messages)} messages from API", severity="information")
                     for msg_data in api_messages:
                         if isinstance(msg_data, dict) and "username" in msg_data and "content" in msg_data:
                             messages.append(f"{msg_data['username']}: {msg_data['content']}")
@@ -818,15 +850,15 @@ class RoomChatWidget(Static):
                 else:
                     # Fallback to local messages
                     messages = self.rooms[self.current_room]["messages"]
-                    self.app.notify("No messages from API, using local", severity="warning")
+                    pass
             else:
                 # Use local messages when not authenticated
                 messages = self.rooms[self.current_room]["messages"]
-                self.app.notify("Not authenticated, using local messages", severity="information")
+                pass
         except Exception as e:
             # Fallback to local messages on API error
             messages = self.rooms[self.current_room]["messages"]
-            self.app.notify(f"Could not fetch messages from server, using local: {str(e)}", severity="warning")
+            pass
         
         recent_messages = messages[-40:] if len(messages) > 40 else messages
         
@@ -888,6 +920,8 @@ class RoomChatWidget(Static):
         """Handle room clicks."""
         if event.room_name == "new_room":
             self.app.push_screen(CreateRoomModal(), callback=self.handle_room_creation)
+        elif event.room_name == "join_room":
+            self.app.push_screen(JoinRoomModal(), callback=self.handle_join_room_result)
         else:
             self.switch_room(event.room_name)
             
@@ -901,9 +935,8 @@ class RoomChatWidget(Static):
                     if self.api_client and self.api_client.is_authenticated():
                         # Create room on server
                         response = self.api_client.create_room(room_name, private=not is_public)
-                        self.app.notify(f"Room '{room_name}' created on server", severity="success")
                 except Exception as e:
-                    self.app.notify(f"Room created locally (server unavailable)", severity="warning")
+                    pass
                 
                 # Create room locally
                 self.rooms[room_name] = {
@@ -919,6 +952,80 @@ class RoomChatWidget(Static):
                           classes="system-message")
                 )
 
+    def handle_join_room_result(self, result) -> None:
+        """Handle join room modal result."""
+        if result is not None:
+            room_name, password = result
+            self.join_room_by_name(room_name, password)
+
+    def join_room_by_name(self, room_name: str, password: str | None = None) -> None:
+        """Join a room by name using API when available, falling back to local, then switch."""
+        room_name = room_name.strip()
+        if not room_name:
+            return
+
+        try:
+            joined = False
+            created = False
+            if self.api_client and self.api_client.is_authenticated():
+                # Try join existing
+                try:
+                    resp = self.api_client.join_room(room_name, password=password)
+                    if resp and resp.get("success", False):
+                        joined = True
+                except Exception:
+                    joined = False
+
+                # If join failed because room doesn't exist, try to create (public if no password specified)
+                if not joined:
+                    try:
+                        create_resp = self.api_client.create_room(room_name, private=bool(password), password=password)
+                        if create_resp and create_resp.get("success", False):
+                            created = True
+                            # attempt join again
+                            join_again = self.api_client.join_room(room_name, password=password)
+                            if join_again and join_again.get("success", False):
+                                joined = True
+                    except Exception:
+                        pass
+            else:
+                pass
+
+            # Ensure local room exists
+            if room_name not in self.rooms:
+                self.rooms[room_name] = {"users": [self.username], "messages": []}
+
+            # Switch regardless; server history will load if available
+            prev_room = self.current_room
+            self.current_room = room_name
+            self.users = self.rooms[room_name]["users"]
+            save_rooms_data(self.rooms)
+
+            # Update UI
+            self._load_room_messages()
+            self._refresh_user_list()
+            self._refresh_room_list()
+            self.chat_input.placeholder = f"Message #{room_name}..."
+
+            # Restart polling for new room
+            self._setup_realtime_updates()
+
+            # Notify outcome
+            # Silent on join success/fallback
+        except Exception as e:
+            # On unexpected error, fall back to local join and notify
+            if room_name not in self.rooms:
+                self.rooms[room_name] = {"users": [self.username], "messages": []}
+            self.current_room = room_name
+            self.users = self.rooms[room_name]["users"]
+            save_rooms_data(self.rooms)
+            self._load_room_messages()
+            self._refresh_user_list()
+            self._refresh_room_list()
+            self.chat_input.placeholder = f"Message #{room_name}..."
+            self._setup_realtime_updates()
+            pass
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle message input."""
         if event.input.id == "chat_input":
@@ -933,12 +1040,11 @@ class RoomChatWidget(Static):
                     response = self.api_client.send_message(self.current_room, message_text)
                     if response and "message" in response:
                         message_sent = True
-                        self.app.notify("✅ Sent", severity="success", timeout=0.5)
                         # Don't refresh immediately - let polling handle it for consistency
                     else:
-                        self.app.notify("Failed to send message to server, storing locally", severity="warning")
+                        pass
                 else:
-                    self.app.notify("Not connected to server, storing message locally", severity="information")
+                    pass
             except Exception as e:
                 # If both WebSocket and API fail, fall back to local mode
                 self.app.notify(f"Could not send to server: {str(e)}", severity="error")
@@ -1018,7 +1124,7 @@ class RoomChatWidget(Static):
         except Exception as e:
             # Fallback - send notification
             self.app.notify(f"Navigation error: {str(e)}", severity="error")
-            self.app.notify("Use ':back' command or logout to return", severity="information")
+            pass
     
     def _setup_realtime_updates(self) -> None:
         """Setup real-time updates using polling only (WebSocket disabled)."""
@@ -1031,9 +1137,8 @@ class RoomChatWidget(Static):
                     except Exception:
                         pass
                 self.polling_timer = self.set_interval(1.0, self._polling_refresh)
-                self.app.notify("Using polling for updates (WebSocket disabled)", severity="information")
             else:
-                self.app.notify("Authentication required for updates", severity="information")
+                pass
         except Exception as e:
             # Last resort: try to at least start polling if possible
             if self.api_client and self.api_client.is_authenticated():
@@ -1075,18 +1180,10 @@ class RoomChatWidget(Static):
                         self.main_content.scroll_to(y=10000)
                         
                         # Notify about new messages if count increased (but keep it subtle)
-                        if new_count > old_count and old_count > 0:
-                            new_msgs = new_count - old_count
-                            # Only show notification for multiple messages or if it's been a while
-                            if new_msgs > 1:
-                                self.app.notify(f"📨 {new_msgs} new messages", severity="information", timeout=1)
+                        # silent on new message counts
             except Exception as e:
-                # Only notify about connection issues occasionally to avoid spam
-                import time
-                current_time = time.time()
-                if not hasattr(self, '_last_error_time') or current_time - self._last_error_time > 30:
-                    self.app.notify("Connection issue during refresh", severity="warning", timeout=3)
-                    self._last_error_time = current_time
+                # Silent on connection issues during refresh
+                pass
 
 
 class AeroStream(App):
@@ -1934,11 +2031,19 @@ Colon Commands (press : then type):
         if not room_name:
             return "Room name is required. Use -r flag to specify room name"
         
-        # Simulate joining a room
-        if password:
-            return f"Joining room '{room_name}' with password..."
-        else:
-            return f"Joining room '{room_name}' (no password)..."
+        # If we're already in the rooms UI, instruct it to join
+        try:
+            splash = self.query_one(SplashScreen)
+            # If not currently in rooms, go there first
+            if getattr(splash, 'current_screen', '') != 'rooms':
+                username = getattr(splash, 'username', 'User')
+                splash.switch_to_rooms(username)
+            # Find the room widget and invoke join
+            room_widget = self.query_one(RoomChatWidget)
+            room_widget.join_room_by_name(room_name, password or None)
+            return f"Joining room '{room_name}'{' with password' if password else ''}..."
+        except Exception as e:
+            return f"Could not join room: {str(e)}"
     
     def _create_command(self, args: CommandArgs):
         """Handle create room command with parameters."""
@@ -2037,8 +2142,7 @@ Colon Commands (press : then type):
                 self.notify("Please enter both username and password", severity="error")
                 return
             
-            # Show progress indicator
-            self.notify("Logging in...", severity="information")
+            # Silent progress
             
             # Perform login in background to avoid blocking UI
             from functools import partial
@@ -2047,7 +2151,6 @@ Colon Commands (press : then type):
         except Exception as e:
             # Unexpected error (UI elements not found, etc.)
             self.notify("An unexpected error occurred during login", severity="error")
-            self.notify(str(e), severity="error")
     
     async def _perform_login(self, username: str, password: str):
         """Worker function for background login."""
@@ -2219,8 +2322,7 @@ Colon Commands (press : then type):
                 self.notify("Password must be at least 6 characters long", severity="error")
                 return
             
-            # Show progress indicator
-            self.notify("Creating account...", severity="information")
+            # Silent progress
             
             # Perform registration in background to avoid blocking UI
             from functools import partial
@@ -2229,7 +2331,6 @@ Colon Commands (press : then type):
         except Exception as e:
             # Unexpected error (UI elements not found, etc.)
             self.notify("An unexpected error occurred during registration", severity="error")
-            self.notify(str(e), severity="error")
     
     def _register_worker(self, username: str, password: str):
         """Background worker for registration to prevent UI blocking."""
@@ -2266,7 +2367,7 @@ Colon Commands (press : then type):
             password_input = self.query_one("#password-input")
             
             # Registration successful
-            self.notify(f"Account created for {username}! Please login.", severity="information")
+            self.notify(f"Account created for {username}. Please login.", severity="information")
             
             # Clear both fields after successful registration
             username_input.value = ""
@@ -2332,7 +2433,7 @@ Colon Commands (press : then type):
             if self.splash_screen:
                 self.splash_screen.switch_to_login()
             
-            self.notify("Logged out successfully", severity="information")
+            self.notify("Logged out", severity="information")
             
         except Exception as e:
             # Even if there's an error, we should still logout locally

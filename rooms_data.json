@@ -1,10 +1,14 @@
 {
+    "global": {
+        "users": [
+            "brett"
+        ],
+        "messages": []
+    },
     "testui": {
         "users": [
             "brett"
         ],
-        "messages": [
-            "brett: what's up world"
-        ]
+        "messages": []
     }
 }
