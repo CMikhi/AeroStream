@@ -7,7 +7,7 @@ import time
 
 # WebSocket import - optional dependency
 try:
-    import websocket
+    import websocket  # provided by 'websocket-client'
     WEBSOCKET_AVAILABLE = True
 except ImportError:
     WEBSOCKET_AVAILABLE = False
@@ -265,143 +265,209 @@ class IgniteAPIClient:
 
 class WebSocketClient:
     """
-    WebSocket client for real-time messaging with the Ignite Chat backend.
-    Note: Requires websocket-client package (pip install websocket-client)
+    Browser-parity WebSocket client for the Ignite Chat backend.
+    Mirrors the flow used by the working HTML client:
+    - Connect -> send auth -> receive auth_success -> receive message_history
+    - Send send_message events, receive message_sent/new_message
+    - Handles user_joined/user_left/ping/pong
+
+    Requires: websocket-client
     """
-    
+
     def __init__(self, base_url: str = "ws://localhost:8000", token: Optional[str] = None):
-        """
-        Initialize WebSocket client.
-        
-        Args:
-            base_url: WebSocket base URL (default: ws://localhost:8000)
-            token: JWT token for authentication
-        """
         if not WEBSOCKET_AVAILABLE:
-            raise ImportError("websocket-client package is required for WebSocket functionality. Install with: pip install websocket-client")
-        
-        self.base_url = base_url.rstrip('/')
+            raise ImportError(
+                "websocket-client package is required for WebSocket functionality. Install with: pip install websocket-client"
+            )
+
+        self._original_base_url = base_url or "ws://localhost:8000"
+        self.base_url = self._normalize_ws_base(self._original_base_url)
         self.token = token
-        self.ws = None
+
+        # Runtime fields
+        self.ws = None  # WebSocketApp instance set on connect
         self.is_connected = False
-        self.message_handlers = []
-        self._listen_thread: Optional[threading.Thread] = None
-        self._stop_listening = False
-    
-    def connect(self, room_name: str) -> bool:
+        self._ready = threading.Event()  # set after auth_success is received
+        self._stop = threading.Event()
+        self._connection_thread = None
+        self.message_handlers = []  # handlers receive the message dict
+
+    # ---------------------- public api ----------------------
+    def connect(self, room_name: str, api_client=None, wait_ready_seconds: float = 8.0) -> bool:
         """
-        Connect to a room via WebSocket.
-        
-        Args:
-            room_name: Name of the room to connect to
-            
-        Returns:
-            True if connection successful, False otherwise
+        Connect to the room and complete the same handshake as the web client.
+        Returns True only after auth_success is received.
         """
-        if not WEBSOCKET_AVAILABLE:
-            raise ImportError("websocket-client package is required")
-            
-        try:
-            ws_url = f"{self.base_url}/ws/{room_name}"
-            self.ws = websocket.create_connection(ws_url)  # type: ignore
-            
-            # Send authentication message
-            auth_message = {
-                "type": "auth",
-                "token": self.token
-            }
-            self.ws.send(json.dumps(auth_message))
-            
-            # Wait for auth response
-            response = json.loads(self.ws.recv())
-            if response.get("type") == "auth_success":
-                self.is_connected = True
-                self._stop_listening = False
-                
-                # Start listening thread
-                self._listen_thread = threading.Thread(target=self._listen_for_messages, daemon=True)
-                self._listen_thread.start()
-                
-                return True
-            else:
-                error_msg = response.get("message", "Authentication failed")
-                print(f"WebSocket auth failed: {error_msg}")
-                self.ws.close()
+        # Optional HTTP join validation like the web client
+        if api_client and hasattr(api_client, "join_room"):
+            try:
+                join_resp = api_client.join_room(room_name)
+                print(f"[WS] join_room validation: {join_resp}")
+            except Exception as e:
+                print(f"[WS] join_room validation failed: {e}")
                 return False
-                
-        except Exception as e:
-            print(f"WebSocket connection failed: {e}")
-            return False
-    
+
+        ws_url = self._build_ws_url(room_name)
+        origin = self._compute_origin()
+        header = self._build_headers_with_origin(origin)
+        print(f"[WS] Connecting to: {ws_url}\n      base_url={self.base_url}\n      origin={origin}\n      headers={header}")
+
+        # Build WebSocketApp with bound handlers and headers (browser parity)
+        self.ws = websocket.WebSocketApp(
+            ws_url,
+            header=header,
+            on_open=self._on_open,
+            on_message=self._on_message,
+            on_error=self._on_error,
+            on_close=self._on_close,
+        )
+
+        self._stop.clear()
+        self._ready.clear()
+
+        def _runner():
+            try:
+                # origin already set via header; keep pings like the browser keeps ws alive
+                self.ws.run_forever(
+                    ping_interval=25,
+                    ping_timeout=10,
+                )
+            except Exception as e:
+                print(f"[WS] run_forever exception: {e}")
+
+        self._connection_thread = threading.Thread(target=_runner, daemon=True)
+        self._connection_thread.start()
+
+        # Wait until auth_success or timeout
+        ok = self._ready.wait(timeout=wait_ready_seconds)
+        self.is_connected = ok and not self._stop.is_set()
+        if not self.is_connected:
+            print("[WS] Did not become ready before timeout (no auth_success). Common causes: invalid token, room doesn't exist, proxy stripping headers/origin.")
+        return self.is_connected
+
     def disconnect(self):
-        """Disconnect from WebSocket."""
-        self._stop_listening = True
+        self._stop.set()
         self.is_connected = False
-        
-        if self.ws:
-            self.ws.close()
+        try:
+            if self.ws:
+                self.ws.close()
+        finally:
             self.ws = None
-            
-        if self._listen_thread and self._listen_thread.is_alive():
-            self._listen_thread.join(timeout=1)
-    
+            if self._connection_thread and self._connection_thread.is_alive():
+                self._connection_thread.join(timeout=2)
+            self._connection_thread = None
+
     def send_message(self, message: str):
-        """
-        Send a message through WebSocket.
-        
-        Args:
-            message: Message content to send
-        """
-        if not self.is_connected or not self.ws:
+        if not (self.ws and self.is_connected):
             raise RuntimeError("WebSocket not connected")
-            
-        message_data = {
-            "type": "send_message",
-            "message": message
-        }
-        self.ws.send(json.dumps(message_data))
-    
+        payload = {"type": "send_message", "message": message}
+        try:
+            self.ws.send(json.dumps(payload))
+        except Exception as e:
+            print(f"[WS] send_message failed: {e}")
+            raise
+
     def add_message_handler(self, handler):
-        """
-        Add a message handler function.
-        
-        Args:
-            handler: Function that takes a message dict as parameter
-        """
         self.message_handlers.append(handler)
-    
+
     def remove_message_handler(self, handler):
-        """Remove a message handler."""
         if handler in self.message_handlers:
             self.message_handlers.remove(handler)
-    
-    def _listen_for_messages(self):
-        """Listen for incoming WebSocket messages (runs in separate thread)."""
-        while not self._stop_listening and self.is_connected and self.ws:
+
+    # ---------------------- internals ----------------------
+    def _normalize_ws_base(self, base_url: str) -> str:
+        # Accept http(s) or ws(s) or plain host
+        url = base_url.strip()
+        if url.endswith('/'):
+            url = url[:-1]
+
+        if url.startswith("http://"):
+            url = "ws://" + url[len("http://"):]
+        elif url.startswith("https://"):
+            url = "wss://" + url[len("https://"):]
+        elif url.startswith("ws://") or url.startswith("wss://"):
+            pass
+        else:
+            url = f"ws://{url}"
+        return url
+
+    def _build_ws_url(self, room_name: str) -> str:
+        # Ensure we don't duplicate /ws segment
+        if self.base_url.endswith("/ws"):
+            return f"{self.base_url}/{room_name}"
+        return f"{self.base_url}/ws/{room_name}"
+
+    def _compute_origin(self) -> str:
+        # Map ws(s) -> http(s) for Origin header
+        if self.base_url.startswith("wss://"):
+            return "https://" + self.base_url[len("wss://"):]
+        if self.base_url.startswith("ws://"):
+            return "http://" + self.base_url[len("ws://"):]
+        return "http://localhost"
+
+    def _build_headers(self) -> List[str]:
+        """Deprecated: kept for backward compatibility."""
+        return ["User-Agent: websocket-client-python"]
+
+    def _build_headers_with_origin(self, origin: str) -> List[str]:
+        headers: List[str] = [
+            "User-Agent: websocket-client-python",
+            f"Origin: {origin}",
+        ]
+        # Some reverse proxies (like ngrok) gate on this header when accessed outside a browser
+        if "ngrok" in self.base_url or "ngrok-free.dev" in self.base_url:
+            headers.append("ngrok-skip-browser-warning: true")
+        return headers
+
+    # ---------------------- ws callbacks ----------------------
+    def _on_open(self, ws):
+        print("[WS] on_open -> sending auth payload")
+        try:
+            auth = {"type": "auth", "token": self.token}
+            ws.send(json.dumps(auth))
+        except Exception as e:
+            print(f"[WS] failed to send auth: {e}")
+
+    def _emit(self, data: Dict[str, Any]):
+        for handler in list(self.message_handlers):
             try:
-                message = self.ws.recv()
-                if message:
-                    try:
-                        data = json.loads(message)
-                        # Call all registered message handlers
-                        for handler in self.message_handlers:
-                            try:
-                                handler(data)
-                            except Exception as e:
-                                print(f"Error in message handler: {e}")
-                    except json.JSONDecodeError:
-                        print(f"Received non-JSON message: {message}")
-                        
+                handler(data)
             except Exception as e:
-                # Handle WebSocket disconnection and other errors
-                if "Connection is already closed" in str(e) or "WebSocket connection" in str(e):
-                    print("WebSocket connection closed")
-                    break
-                else:
-                    print(f"Error receiving WebSocket message: {e}")
-                    break
-        
+                print(f"[WS] handler error: {e}")
+
+    def _on_message(self, ws, message: str):
+        try:
+            data = json.loads(message)
+        except Exception as e:
+            print(f"[WS] bad json: {e}; raw={message!r}")
+            return
+
+        mtype = data.get("type")
+        if mtype == "auth_success":
+            print("[WS] auth_success received; connection ready")
+            self._ready.set()
+            self.is_connected = True
+        elif mtype == "error":
+            print(f"[WS] server error: {data.get('message')}")
+        elif mtype == "message_history":
+            # Pass through to TUI so it can render the backlog
+            pass
+        elif mtype in ("new_message", "message_sent", "user_joined", "user_left", "pong"):
+            pass
+        # Emit everything for the TUI to handle uniformly
+        self._emit(data)
+
+    def _on_error(self, ws, error):
+        print(f"[WS] on_error: {error}")
+        # Keep connection state pessimistic
         self.is_connected = False
+
+    def _on_close(self, ws, status_code, msg):
+        print(f"[WS] on_close: {status_code} {msg}")
+        self.is_connected = False
+        self._stop.set()
+    
+
 
 
 # Example usage and convenience functions

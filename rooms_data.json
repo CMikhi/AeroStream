@@ -1,26 +1,14 @@
 {
-    "General": {
+    "global": {
         "users": [
-            "mhik",
-            "mhiki"
+            "brett"
         ],
-        "messages": [
-            "mhik: hello",
-            "mhiki: weraefvaef",
-            "mhiki: asdfadfwfjdlkJFKLjd",
-            "mhiki: adf dsfd"
-        ]
+        "messages": []
     },
-    "Random": {
-        "users": [],
-        "messages": [
-            "mhik: Helllooo"
-        ]
-    },
-    "Help": {
-        "users": [],
-        "messages": [
-            "mhik: sup"
-        ]
+    "testui": {
+        "users": [
+            "brett"
+        ],
+        "messages": []
     }
 }

@@ -2,13 +2,24 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Middle, Vertical, Horizontal
 from textual.widgets import Static, Footer, Input, Button
+from textual.screen import Screen, ModalScreen
+from textual.message import Message
 from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode, CommandArgs
 from floating_island import FloatingCommandLine, FloatingResultPanel
 from api import IgniteAPIClient
+import json
+import os
 
 # Note: client will be initialized per AeroStream instance to avoid conflicts
+
+# TUI Application with integrated chat rooms
+# - Login/Registration system with authentication
+# - Main menu navigation 
+# - Multi-room chat interface with room management
+# - API integration for server communication with local fallback
+# - Responsive design matching the app's aesthetic
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -350,20 +361,31 @@ def get_colored_ascii_art(color: str = "bright_cyan") -> str:
 class MenuItem(Static):
     """A menu item with icon and shortcut key."""
     
-    def __init__(self, icon: str, label: str, shortcut: str, **kwargs):
+    class Clicked(Message):
+        """Message sent when the menu item is clicked."""
+        def __init__(self, action: str) -> None:
+            self.action = action
+            super().__init__()
+    
+    def __init__(self, icon: str, label: str, shortcut: str, action: str = None, **kwargs):
         super().__init__(**kwargs)
         self.icon = icon
         self.label = label
         self.shortcut = shortcut
+        self.action = action or label.lower().replace(" ", "_")
     
     def render(self) -> str:
         main_content = f"[bright_white]{self.icon}[/] [white]{self.label}[/]"
         shortcut_part = f"[dim]{self.shortcut}[/]"
         # Add padding to create space between content and shortcut
-        padding = " " * (40 - 1 - len(self.label))  # Adjust 40 to change spacing
-        if self.label == 'settings':
-            padding = (" " * (33 - 1 - len(self.label)))+" " # Adjust 40 to change spacing
+        padding = " " * (41 - 1 - len(self.label))  # Adjust 40 to change spacing
+        if self.label == 'Settings':
+            padding = (" " * (40 - 1 - len(self.label)))+" " # Adjust 40 to change spacing
         return f"{main_content}{padding}{shortcut_part}"
+    
+    def on_click(self) -> None:
+        """Send a message when the menu item is clicked."""
+        self.post_message(self.Clicked(self.action))
 
 
 class LoginScreen(Static):
@@ -408,10 +430,34 @@ class MainMenuScreen(Static):
                             yield Static("Welcome back!", id="welcome-msg", classes="welcome-back")
                             # Menu items
                             with Center(classes="menu-container"):
-                                yield MenuItem("📁", "Rooms", "r", classes="menu-item")
-                                yield MenuItem("🕐", "Recent Rooms", "h", classes="menu-item") 
-                                yield MenuItem("⚙️", "Settings", "s", classes="menu-item")
-                                yield MenuItem("🚪", "Logout", "q", classes="menu-item")
+                                yield MenuItem("📁", "Rooms", "r", "rooms", classes="menu-item")
+                                yield MenuItem("🕐", "Recent Rooms", "h", "recent_rooms", classes="menu-item") 
+                                yield MenuItem("⚙️", "Settings", "s", "settings", classes="menu-item")
+                                yield MenuItem("🚪", "Logout", "q", "logout", classes="menu-item")
+    
+    def on_menu_item_clicked(self, event: MenuItem.Clicked) -> None:
+        """Handle menu item clicks."""
+        try:
+            # Get the splash screen via the app
+            splash_screen = self.app.query_one(SplashScreen)
+            
+            if event.action == "rooms":
+                # Get username from splash screen and switch to rooms
+                username = getattr(splash_screen, 'username', 'User')
+                splash_screen.switch_to_rooms(username)
+            elif event.action == "recent_rooms":
+                pass
+            elif event.action == "settings":
+                pass
+            elif event.action == "logout":
+                # Get the app and handle logout
+                app = self.app
+                if hasattr(app, '_handle_logout'):
+                    app._handle_logout()
+                else:
+                    pass
+        except Exception as e:
+            self.app.notify(f"Navigation error: {str(e)}", severity="error")
         
 
 class SplashScreen(Static):
@@ -435,24 +481,43 @@ class SplashScreen(Static):
         # Footer with quick commands
         yield Footer()
     
+    def _create_room_content(self, username: str, api_client) -> Static:
+        """Create room chat content as a widget."""
+        # Create a container that holds all the room chat functionality
+        room_widget = RoomChatWidget(username, api_client)
+        return room_widget
+    
     def switch_to_main_menu(self, username: str):
-        """Switch from login screen to main menu."""
+        """Switch to main menu from any screen."""
         self.username = username
         self.current_screen = "main"
         
-        # Remove login screen and add main menu
-        login_screen = self.query_one("#login-screen")
-        login_screen.remove()
+        # Remove current content (login screen or room content)
+        try:
+            login_screen = self.query_one("#login-screen")
+            login_screen.remove()
+        except Exception:
+            pass
         
-        main_menu = MainMenuScreen()
-        main_menu.id = "main-screen"
-        self.mount(main_menu, before="#command-line")
+        try:
+            room_content = self.query_one("#room-content")
+            room_content.remove()
+        except Exception:
+            pass
+        
+        # Add main menu if not already present
+        try:
+            self.query_one("#main-screen")
+        except Exception:
+            main_menu = MainMenuScreen()
+            main_menu.id = "main-screen"
+            self.mount(main_menu, before="#command-line")
     
     def switch_to_login(self):
         """Switch from main menu back to login screen."""
         self.current_screen = "login"
         self.username = ""
-        
+
         # Remove main screen and add login screen
         try:
             main_screen = self.query_one("#main-screen")
@@ -463,6 +528,662 @@ class SplashScreen(Static):
         login_screen = LoginScreen()
         login_screen.id = "login-screen"
         self.mount(login_screen, before="#command-line")
+        
+    def switch_to_rooms(self, username: str):
+        """Switch to room chat interface."""
+        try:
+            self.current_screen = "rooms"
+            self.username = username
+            
+            # Remove main menu and add room content to this screen instead of pushing new screen
+            try:
+                main_screen = self.query_one("#main-screen")
+                main_screen.remove()
+            except Exception as e:
+                # Screen might not exist yet, that's okay
+                pass
+            
+            # Get reference to parent app to pass client
+            app = self.app
+            api_client = getattr(app, 'client', None)
+            
+            # Create room content as a widget and mount it to this screen
+            room_content = self._create_room_content(username, api_client)
+            room_content.id = "room-content"
+            self.mount(room_content, before="#command-line")
+            
+        except Exception as e:
+            self.app.notify(f"Error switching to rooms: {str(e)}", severity="error")
+
+
+# Room management constants and classes
+ROOMS_FILE = "rooms_data.json"
+
+def load_rooms_data():
+    """Load room data from JSON file."""
+    if os.path.exists(ROOMS_FILE):
+        try:
+            with open(ROOMS_FILE, 'r') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+def save_rooms_data(rooms_data):
+    """Save room data to JSON file."""
+    with open(ROOMS_FILE, 'w') as f:
+        json.dump(rooms_data, f, indent=4)
+
+
+class CreateRoomModal(ModalScreen):
+    """Modal screen for creating new rooms."""
+    
+    def compose(self) -> ComposeResult:
+        yield Center(
+            Vertical(
+                Static("Create New Room", classes="modal-title"),
+                Input(placeholder="Room Name", id="room-name-input", classes="modal-input"),
+                Horizontal(
+                    Button("Public", variant="primary", id="public-btn", classes="modal-button"),
+                    Button("Private", variant="default", id="private-btn", classes="modal-button"),
+                    Button("Cancel", id="cancel-btn", classes="modal-button"),
+                    classes="modal-buttons"
+                ),
+                classes="modal-container"
+            ),
+            classes="modal-center"
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel-btn":
+            self.dismiss()
+        elif event.button.id in ["public-btn", "private-btn"]:
+            room_name = self.query_one("#room-name-input").value.strip()
+            if room_name:
+                is_public = event.button.id == "public-btn"
+                self.dismiss((room_name, is_public))
+
+
+class JoinRoomModal(ModalScreen):
+    """Modal screen for joining existing rooms by name (optional password)."""
+    def compose(self) -> ComposeResult:
+        yield Center(
+            Vertical(
+                Static("Join Room", classes="modal-title"),
+                Input(placeholder="Room Name", id="join-room-name-input", classes="modal-input"),
+                Input(placeholder="Password (optional)", password=True, id="join-room-pass-input", classes="modal-input"),
+                Horizontal(
+                    Button("Join", variant="primary", id="join-confirm-btn", classes="modal-button"),
+                    Button("Cancel", id="join-cancel-btn", classes="modal-button"),
+                    classes="modal-buttons"
+                ),
+                classes="modal-container"
+            ),
+            classes="modal-center"
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "join-cancel-btn":
+            self.dismiss()
+        elif event.button.id == "join-confirm-btn":
+            room_name = self.query_one("#join-room-name-input").value.strip()
+            password = self.query_one("#join-room-pass-input").value.strip()
+            if room_name:
+                self.dismiss((room_name, password or None))
+
+
+class ClickableRoom(Static):
+    """A clickable room label that can be selected."""
+    
+    class Clicked(Message):
+        """Message sent when the room is clicked."""
+        def __init__(self, room_name: str) -> None:
+            self.room_name = room_name
+            super().__init__()
+    
+    def __init__(self, room_name: str, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.room_name = room_name
+    
+    def on_click(self) -> None:
+        """Send a message when the room is clicked."""
+        self.post_message(self.Clicked(self.room_name))
+
+
+class RoomChatWidget(Static):
+    """Main room chat interface integrated into the TUI."""
+    
+    BINDINGS = [
+        ("m", "focus_message_box", "Focus Message Box"),
+        ("up", "previous_room", "Previous Room"),
+        ("down", "next_room", "Next Room"),
+        ("escape", "unfocus_input", "Unfocus Input"),
+        ("ctrl+h", "back_to_home", "Back to Home"),
+    ]
+    
+    def __init__(self, username: str, api_client):
+        super().__init__()
+        self.api_client = api_client
+        self.username = username
+        self.roomBar = None
+        self.room_list = []
+        self.usersBar = None
+        self.main_content = None
+        self.chat_input = None
+        self.room_counter = 0
+        
+        # Initialize with global room only
+        self.rooms = {
+            "global": {"users": [username], "messages": []}
+        }
+        self.current_room = "global"
+        self.users = [username]  # Start with current user
+        
+        # Polling timer for updates (WebSocket disabled)
+        self.polling_timer = None
+        self.last_message_count = 0
+        
+        # Try to join the testui room via API
+        self._join_default_room()
+
+    def _join_default_room(self):
+        """Join the default global room via API, creating it if necessary."""
+        try:
+            if self.api_client and self.api_client.is_authenticated():
+                # First try to join the global room
+                try:
+                    response = self.api_client.join_room("global")
+                    if response and "message" in response:
+                        return
+                except Exception as join_error:
+                    # If joining fails, try to create the room first
+                    # silent: create if missing
+                    try:
+                        create_response = self.api_client.create_room("global", private=False)
+                        if create_response and "message" in create_response:
+                            # Now try to join the newly created room
+                            response = self.api_client.join_room("global")
+                            if response and "message" in response:
+                                return
+                    except Exception as create_error:
+                        pass
+                
+                # If we get here, both join and create failed
+                pass
+            else:
+                pass
+        except Exception as e:
+            self.app.notify(f"Error with global room setup: {str(e)}", severity="error")
+
+    def compose(self) -> ComposeResult:
+        """Create the room chat interface layout."""
+        try:
+            # Room bar (left sidebar) - Create empty, will be populated in on_mount
+            self.roomBar = Vertical(id="roomBar", classes="room-sidebar")
+            
+            # Main chat area - Create empty, will be populated in on_mount
+            self.main_content = Vertical(id="main-chat", classes="chat-main")
+            
+            self.chat_input = Input(
+                placeholder=f"Message #{self.current_room}...", 
+                id="chat_input", 
+                classes="chat-input"
+            )
+            
+            # Users bar (right sidebar) - Create empty, will be populated in on_mount
+            self.usersBar = Vertical(id="usersBar", classes="users-sidebar")
+
+            # Create layout
+            layout = Horizontal(
+                self.roomBar,
+                Vertical(
+                    self.main_content,
+                    self.chat_input,
+                    classes="chat-column"
+                ),
+                self.usersBar,
+                classes="room-container"
+            )
+            
+            yield layout
+            
+        except Exception as e:
+            self.app.notify(f"Error composing room chat layout: {str(e)}", severity="error")
+            yield Static(f"Error loading chat interface: {str(e)}", classes="error-message")
+
+    def on_mount(self) -> None:
+        """Initialize the room interface."""
+        try:
+            # Call methods directly to populate the interface
+            self._refresh_room_list()
+            self._refresh_user_list()
+            self._load_room_messages()
+            
+            # Start real-time updates via polling
+            self._setup_realtime_updates()
+        except Exception as e:
+            self.app.notify(f"Error initializing rooms: {str(e)}", severity="error")
+
+    def _refresh_room_list(self) -> None:
+        """Update the room bar with current rooms."""
+        self.roomBar.remove_children()
+        
+        # Add header with navigation hint
+        self.roomBar.mount(Static("󰋜 Rooms", classes="sidebar-header"))
+        self.roomBar.mount(Static("ESC: Unfocus | ^H: Home", classes="nav-hint"))
+        
+        self.room_list = sorted(self.rooms.keys())
+        
+        # Add each room
+        for room_name in self.room_list:
+            is_current = room_name == self.current_room
+            icon = "󰭷" if is_current else "󰋜"
+            unread = len(self.rooms[room_name]["messages"])
+            unread_badge = f" ({unread})" if unread > 0 else ""
+            
+            style = "room-current" if is_current else "room-item"
+            self.room_counter += 1
+            safe_room_name = room_name.lower().replace(" ", "_")
+            room_id = f"room-{safe_room_name}-{self.room_counter}"
+            
+            room_text = f"{icon} {room_name}{unread_badge}"
+            clickable_room = ClickableRoom(
+                room_name,
+                room_text,
+                id=room_id,
+                classes=style
+            )
+            self.roomBar.mount(clickable_room)
+        
+        # Add New Room button
+        new_room_button = ClickableRoom(
+            "new_room",
+            "󰐕 New Room",
+            classes="room-action"
+        )
+        self.roomBar.mount(new_room_button)
+
+        # Add Join Room button
+        join_room_button = ClickableRoom(
+            "join_room",
+            "󰭻 Join Room",
+            classes="room-action"
+        )
+        self.roomBar.mount(join_room_button)
+
+    def _refresh_user_list(self) -> None:
+        """Update the users bar with current users."""
+        self.usersBar.remove_children()
+        
+        # Add header
+        self.usersBar.mount(Static(f"󰀄 Users ({len(self.users)})", classes="sidebar-header"))
+        
+        # Add each user
+        for idx, user in enumerate(sorted(self.users)):
+            is_self = user == self.username
+            icon = "󰋗" if is_self else "󰀄"
+            style = "user-self" if is_self else "user-item"
+            safe_user = user.lower().replace(" ", "_")
+            safe_room = self.current_room.lower().replace(" ", "_")
+            user_id = f"user-{safe_room}-{safe_user}"
+            self.usersBar.mount(Static(f"{icon} {user}", id=user_id, classes=style))
+
+    def _load_room_messages(self) -> None:
+        """Load and display messages for the current room."""
+        self.main_content.remove_children()
+        
+        # Try to fetch messages from API first
+        messages = []
+        try:
+            if self.api_client and self.api_client.is_authenticated():
+                response = self.api_client.get_messages(self.current_room, limit=40)
+                if response and "messages" in response:
+                    # Format API messages to match our expected format
+                    api_messages = response["messages"]
+                    for msg_data in api_messages:
+                        if isinstance(msg_data, dict) and "username" in msg_data and "content" in msg_data:
+                            messages.append(f"{msg_data['username']}: {msg_data['content']}")
+                        elif isinstance(msg_data, dict) and "username" in msg_data and "message" in msg_data:
+                            messages.append(f"{msg_data['username']}: {msg_data['message']}")
+                        elif isinstance(msg_data, str):
+                            messages.append(msg_data)
+                else:
+                    # Fallback to local messages
+                    messages = self.rooms[self.current_room]["messages"]
+                    pass
+            else:
+                # Use local messages when not authenticated
+                messages = self.rooms[self.current_room]["messages"]
+                pass
+        except Exception as e:
+            # Fallback to local messages on API error
+            messages = self.rooms[self.current_room]["messages"]
+            pass
+        
+        recent_messages = messages[-40:] if len(messages) > 40 else messages
+        
+        if not recent_messages:
+            # Add welcome message if no messages
+            self.main_content.mount(Static(f"Welcome to #{self.current_room}!", classes="welcome-message"))
+            self.main_content.mount(Static("No messages yet. Start the conversation!", classes="info-message"))
+        else:
+            for msg in recent_messages:
+                # Format message based on whether it's from current user
+                if ": " in msg:
+                    username, message_text = msg.split(": ", 1)
+                    is_self = username == self.username
+                    
+                    if is_self:
+                        # Current user's messages on the right - wrap in container
+                        formatted_msg = f"{message_text}"
+                        message_widget = Static(formatted_msg, classes="chat-bubble-self", markup=True)
+                        container = Horizontal(message_widget, classes="message-container-self")
+                        self.main_content.mount(container)
+                    else:
+                        # Other users' messages on the left
+                        formatted_msg = f"[bold #89b4fa]{username}[/bold #89b4fa]: {message_text}"
+                        message_widget = Static(formatted_msg, classes="chat-bubble-other", markup=True)
+                        container = Horizontal(message_widget, classes="message-container-other")
+                        self.main_content.mount(container)
+                else:
+                    formatted_msg = msg
+                    self.main_content.mount(Static(formatted_msg, classes="chat-message", markup=True))
+        
+        # Update the message count for polling comparison
+        self.last_message_count = len(messages)
+
+    def switch_room(self, room_name: str) -> None:
+        """Switch to a different room."""
+        if room_name in self.rooms and room_name != self.current_room:
+            # Store current room's users
+            self.rooms[self.current_room]["users"] = self.users
+            
+            # Cleanup current connections and timers
+            self._cleanup_connections()
+            
+            # Switch rooms
+            self.current_room = room_name
+            self.users = self.rooms[room_name]["users"]
+            
+            # Update displays
+            self._load_room_messages()
+            self._refresh_user_list()
+            self._refresh_room_list()
+            
+            # Update input placeholder
+            self.chat_input.placeholder = f"Message #{room_name}..."
+            
+            # Setup real-time updates for new room
+            self._setup_realtime_updates()
+
+    def on_clickable_room_clicked(self, event: ClickableRoom.Clicked) -> None:
+        """Handle room clicks."""
+        if event.room_name == "new_room":
+            self.app.push_screen(CreateRoomModal(), callback=self.handle_room_creation)
+        elif event.room_name == "join_room":
+            self.app.push_screen(JoinRoomModal(), callback=self.handle_join_room_result)
+        else:
+            self.switch_room(event.room_name)
+            
+    def handle_room_creation(self, result) -> None:
+        """Handle room creation result."""
+        if result is not None:
+            room_name, is_public = result
+            if room_name not in self.rooms:
+                # Try to create room on server
+                try:
+                    if self.api_client and self.api_client.is_authenticated():
+                        # Create room on server
+                        response = self.api_client.create_room(room_name, private=not is_public)
+                except Exception as e:
+                    pass
+                
+                # Create room locally
+                self.rooms[room_name] = {
+                    "users": [self.username],
+                    "messages": [],
+                    "is_public": is_public
+                }
+                save_rooms_data(self.rooms)
+                self._refresh_room_list()
+                # Show success message
+                self.main_content.mount(
+                    Static(f"→ Room #{room_name} created ({'public' if is_public else 'private'})", 
+                          classes="system-message")
+                )
+
+    def handle_join_room_result(self, result) -> None:
+        """Handle join room modal result."""
+        if result is not None:
+            room_name, password = result
+            self.join_room_by_name(room_name, password)
+
+    def join_room_by_name(self, room_name: str, password: str | None = None) -> None:
+        """Join a room by name using API when available, falling back to local, then switch."""
+        room_name = room_name.strip()
+        if not room_name:
+            return
+
+        try:
+            joined = False
+            created = False
+            if self.api_client and self.api_client.is_authenticated():
+                # Try join existing
+                try:
+                    resp = self.api_client.join_room(room_name, password=password)
+                    if resp and resp.get("success", False):
+                        joined = True
+                except Exception:
+                    joined = False
+
+                # If join failed because room doesn't exist, try to create (public if no password specified)
+                if not joined:
+                    try:
+                        create_resp = self.api_client.create_room(room_name, private=bool(password), password=password)
+                        if create_resp and create_resp.get("success", False):
+                            created = True
+                            # attempt join again
+                            join_again = self.api_client.join_room(room_name, password=password)
+                            if join_again and join_again.get("success", False):
+                                joined = True
+                    except Exception:
+                        pass
+            else:
+                pass
+
+            # Ensure local room exists
+            if room_name not in self.rooms:
+                self.rooms[room_name] = {"users": [self.username], "messages": []}
+
+            # Switch regardless; server history will load if available
+            prev_room = self.current_room
+            self.current_room = room_name
+            self.users = self.rooms[room_name]["users"]
+            save_rooms_data(self.rooms)
+
+            # Update UI
+            self._load_room_messages()
+            self._refresh_user_list()
+            self._refresh_room_list()
+            self.chat_input.placeholder = f"Message #{room_name}..."
+
+            # Restart polling for new room
+            self._setup_realtime_updates()
+
+            # Notify outcome
+            # Silent on join success/fallback
+        except Exception as e:
+            # On unexpected error, fall back to local join and notify
+            if room_name not in self.rooms:
+                self.rooms[room_name] = {"users": [self.username], "messages": []}
+            self.current_room = room_name
+            self.users = self.rooms[room_name]["users"]
+            save_rooms_data(self.rooms)
+            self._load_room_messages()
+            self._refresh_user_list()
+            self._refresh_room_list()
+            self.chat_input.placeholder = f"Message #{room_name}..."
+            self._setup_realtime_updates()
+            pass
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle message input."""
+        if event.input.id == "chat_input":
+            message_text = event.value.strip()
+            if not message_text:
+                return
+
+            # Send message via HTTP API; fallback to local storage
+            message_sent = False
+            try:
+                if self.api_client and self.api_client.is_authenticated():
+                    response = self.api_client.send_message(self.current_room, message_text)
+                    if response and "message" in response:
+                        message_sent = True
+                        # Don't refresh immediately - let polling handle it for consistency
+                    else:
+                        pass
+                else:
+                    pass
+            except Exception as e:
+                # If both WebSocket and API fail, fall back to local mode
+                self.app.notify(f"Could not send to server: {str(e)}", severity="error")
+            
+            # Only store locally if server didn't handle it or failed
+            if not message_sent:
+                message = f"{self.username}: {message_text}"
+                self.rooms[self.current_room]["messages"].append(message)
+                save_rooms_data(self.rooms)
+                # Refresh messages display to show local message
+                self._load_room_messages()
+                # Auto scroll to bottom for new messages
+                self.main_content.scroll_to(y=10000)
+            
+            # Clear input
+            event.input.value = ""
+            
+            # Refresh room list to update unread counts
+            self._refresh_room_list()
+
+    def action_focus_message_box(self) -> None:
+        """Focus the message input."""
+        self.chat_input.focus()
+
+    def action_previous_room(self) -> None:
+        """Navigate to previous room."""
+        if self.room_list:
+            current_index = self.room_list.index(self.current_room)
+            new_index = (current_index - 1) % len(self.room_list)
+            self.switch_room(self.room_list[new_index])
+
+    def action_next_room(self) -> None:
+        """Navigate to next room."""
+        if self.room_list:
+            current_index = self.room_list.index(self.current_room)
+            new_index = (current_index + 1) % len(self.room_list)
+            self.switch_room(self.room_list[new_index])
+
+    def action_unfocus_input(self) -> None:
+        """Unfocus the message input."""
+        try:
+            # Check if the input is focused and unfocus it
+            if self.chat_input.has_focus:
+                self.chat_input.blur()
+            else:
+                # If nothing is focused, focus the input for convenience
+                self.chat_input.focus()
+        except Exception:
+            # Fallback - just blur any focused widget
+            self.screen.set_focus(None)
+
+    def action_back_to_home(self) -> None:
+        """Return to main menu."""
+        self._navigate_to_main_menu()
+        
+    def on_key(self, event) -> None:
+        """Handle key events for room screen, including command line activation."""
+        try:
+            # Pass key events to the app's keyboard handler if it exists
+            if hasattr(self.app, 'keyboard_handler'):
+                handled = self.app.keyboard_handler.handle_key_event(event.key)
+                if handled:
+                    event.prevent_default()
+        except Exception as e:
+            # If keyboard handler fails, continue with normal key processing
+            pass
+    
+    def _navigate_to_main_menu(self) -> None:
+        """Helper method to navigate back to main menu."""
+        try:
+            # Cleanup connections before navigating away
+            self._cleanup_connections()
+            
+            # Get the main splash screen and switch back to main menu
+            splash_screen = self.app.screen
+            splash_screen.switch_to_main_menu(self.username)
+        except Exception as e:
+            # Fallback - send notification
+            self.app.notify(f"Navigation error: {str(e)}", severity="error")
+            pass
+    
+    def _setup_realtime_updates(self) -> None:
+        """Setup real-time updates using polling only (WebSocket disabled)."""
+        try:
+            if self.api_client and self.api_client.is_authenticated():
+                # Ensure only one polling timer is active
+                if self.polling_timer:
+                    try:
+                        self.polling_timer.stop()
+                    except Exception:
+                        pass
+                self.polling_timer = self.set_interval(1.0, self._polling_refresh)
+            else:
+                pass
+        except Exception as e:
+            # Last resort: try to at least start polling if possible
+            if self.api_client and self.api_client.is_authenticated():
+                self.polling_timer = self.set_interval(1.0, self._polling_refresh)
+    
+    # WebSocket handlers removed - polling only
+    
+    def _refresh_messages_display(self) -> None:
+        """Refresh the messages display."""
+        self._load_room_messages()
+        self.main_content.scroll_to(y=10000)
+    
+    def _cleanup_connections(self) -> None:
+        """Cleanup WebSocket connections, polling timer and any connections."""
+        # No WebSocket to clean up
+        # Stop polling timer if it's running
+        if self.polling_timer:
+            try:
+                self.polling_timer.stop()
+                self.polling_timer = None
+            except Exception as e:
+                pass  # Silently handle cleanup errors
+    
+    def _polling_refresh(self) -> None:
+        """Fast polling method for real-time updates."""
+        if self.api_client and self.api_client.is_authenticated():
+            try:
+                # Fetch messages from API
+                response = self.api_client.get_messages(self.current_room, limit=50)
+                if response and "messages" in response:
+                    api_messages = response["messages"]
+                    new_count = len(api_messages)
+                    
+                    # Only refresh if message count changed
+                    if new_count != self.last_message_count:
+                        old_count = self.last_message_count
+                        self.last_message_count = new_count
+                        self._load_room_messages()
+                        self.main_content.scroll_to(y=10000)
+                        
+                        # Notify about new messages if count increased (but keep it subtle)
+                        # silent on new message counts
+            except Exception as e:
+                # Silent on connection issues during refresh
+                pass
 
 
 class AeroStream(App):
@@ -488,6 +1209,7 @@ class AeroStream(App):
         Binding(key="c", action="settings", description="Settings"),
         Binding(key="colon", action="command_mode", description="Command mode"),
         Binding(key="escape", action="escape_mode", description="Exit command mode"),
+        Binding(key="ctrl+h", action="home", description="Home"),
     ]
     
     CSS = """
@@ -720,6 +1442,267 @@ class AeroStream(App):
     .floating-result-panel.hidden {
         display: none;
     }
+    
+    /* Room Chat Interface Styles */
+    .room-container {
+        height: 100%;
+        width: 100%;
+        background: #1e1e2e;
+        layer: below;
+    }
+    
+    #room-content {
+        height: 100%;
+        width: 100%;
+    }
+    
+    .room-sidebar {
+        width: 25;
+        height: 100%;
+        background: #181825;
+        border-right: solid #45475a;
+        padding: 1;
+    }
+    
+    .users-sidebar {
+        width: 20;
+        height: 100%;
+        background: #181825;
+        border-left: solid #45475a;
+        padding: 1;
+    }
+    
+    .chat-column {
+        height: 100%;
+        background: #1e1e2e;
+    }
+    
+    .chat-main {
+        height: 1fr;
+        background: #1e1e2e;
+        padding: 1;
+        overflow-y: auto;
+        scrollbar-background: #313244;
+        scrollbar-color: #6c7086;
+        scrollbar-color-hover: #89b4fa;
+        scrollbar-color-active: #a6e3a1;
+        scrollbar-size: 1 1;
+    }
+    
+    .chat-input {
+        height: 3;
+        background: #313244;
+        color: #cdd6f4;
+        border: solid #6c7086;
+        margin: 0 1 1 1;
+    }
+    
+    .chat-input:focus {
+        border: solid #89b4fa;
+        background: #45475a;
+    }
+    
+    .sidebar-header {
+        color: #1e1e2e;
+        text-style: bold;
+        background: #89b4fa;
+        padding: 1;
+        margin-bottom: 1;
+        text-align: center;
+        height: 3;
+    }
+    
+    .nav-hint {
+        color: #6c7086;
+        text-style: italic;
+        text-align: center;
+        margin-bottom: 1;
+        padding: 0 1;
+    }
+    
+    .room-item {
+        padding: 1;
+        margin-bottom: 1;
+        color: #cdd6f4;
+        background: #313244;
+        border-left: solid #6c7086;
+        height: 3;
+    }
+    
+    .room-item:hover {
+        background: #45475a;
+        color: #89b4fa;
+        border-left: solid #89b4fa;
+    }
+    
+    .room-current {
+        padding: 0 1;
+        margin-bottom: 0;
+        color: #1e1e2e;
+        background: #89b4fa;
+        text-style: bold;
+    }
+    
+    .room-action {
+        padding: 0 1;
+        margin-top: 1;
+        color: #a6e3a1;
+        background: transparent;
+        border-top: solid #45475a;
+        padding-top: 1;
+    }
+    
+    .room-action:hover {
+        background: #45475a;
+        color: #a6e3a1;
+    }
+    
+    .user-item {
+        padding: 1;
+        margin-bottom: 1;
+        color: #cdd6f4;
+        background: #313244;
+        border-left: solid #6c7086;
+        height: 3;
+    }
+    
+    .user-self {
+        padding: 1;
+        margin-bottom: 1;
+        color: #a6e3a1;
+        background: #45475a;
+        border-left: solid #a6e3a1;
+        text-style: bold;
+        height: 3;
+    }
+    
+    .chat-message {
+        margin-bottom: 1;
+        padding: 1 2;
+        color: #cdd6f4;
+        background: #313244;
+        border-left: solid #89b4fa;
+        text-style: none;
+        height: auto;
+        min-height: 2;
+    }
+    
+    .message-container-other {
+        width: 100%;
+        height: auto;
+        margin-bottom: 0;
+        padding-bottom: 1;
+        align: left middle;
+    }
+    
+    .message-container-self {
+        width: 100%;
+        height: auto;
+        margin-bottom: 0;
+        padding-bottom: 1;
+        align: right middle;
+    }
+    
+    .chat-bubble-other {
+        padding: 1;
+        color: #cdd6f4;
+        background: #313244;
+        border-left: solid #89b4fa;
+        text-style: none;
+        height: auto;
+        min-height: 1;
+        width: 45;
+        max-width: 45;
+    }
+    
+    .chat-bubble-self {
+        padding: 1;
+        color: #cdd6f4;
+        background: #45475a;
+        border-right: solid #a6e3a1;
+        text-style: none;
+        height: auto;
+        min-height: 1;
+        width: 45;
+        max-width: 45;
+    }
+    
+    .system-message {
+        margin-bottom: 0;
+        padding: 0 1;
+        color: #f9e2af;
+        background: transparent;
+        text-style: italic;
+    }
+    
+    /* Modal Styles for Room Creation */
+    .modal-center {
+        align: center middle;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .modal-container {
+        background: #1e1e2e;
+        border: solid #89b4fa;
+        border-title-color: #b4befe;
+        padding: 2;
+        width: 60;
+        height: auto;
+        align: center middle;
+    }
+    
+    .modal-title {
+        color: #b4befe;
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 2;
+    }
+    
+    .modal-input {
+        background: #313244;
+        color: #cdd6f4;
+        border: solid #6c7086;
+        margin-bottom: 2;
+        width: 100%;
+    }
+    
+    .modal-input:focus {
+        border: solid #89b4fa;
+        background: #45475a;
+    }
+    
+    .modal-buttons {
+        align: center middle;
+        width: 100%;
+        height: auto;
+    }
+    
+    .modal-button {
+        margin: 0 1;
+        width: 12;
+        height: 1;
+    }
+    
+    .info-message {
+        padding: 1 2;
+        margin: 1 0;
+        color: #89b4fa;
+        background: #181825;
+        text-style: italic;
+        text-align: center;
+        border: solid #45475a;
+    }
+    
+    .welcome-message {
+        padding: 1 2;
+        margin: 1 0;
+        color: #a6e3a1;
+        background: #181825;
+        text-style: bold;
+        text-align: center;
+        border: solid #45475a;
+    }
     """
 
     # KEYBOARD SHORTCUTS INTEGRATION --- DO NOT TOUCH ---
@@ -808,6 +1791,9 @@ class AeroStream(App):
         self.keyboard_handler.register_single_key("r", self._rooms_command)
         self.keyboard_handler.register_single_key("h", self._recent_command)
         self.keyboard_handler.register_single_key("s", self._settings_command)
+        
+        # Register back command for navigation
+        self.keyboard_handler.register_command("back", self._back_command, "Go back to main menu", ["b", "menu"])
         
         # Note: q and ? are still handled by Textual's binding system
         # : (colon) is handled by KeyboardHandler in the on_key method
@@ -911,9 +1897,16 @@ class AeroStream(App):
     def _rooms_command(self, args=None):
         """Handle rooms command."""
         if self.is_authenticated:
-            self.notify("Selected: Rooms")
+            # Navigate to rooms if we're in the main menu
+            try:
+                splash_screen = self.query_one(SplashScreen)
+                username = getattr(splash_screen, 'username', 'User')
+                splash_screen.switch_to_rooms(username)
+                return "Entering chat rooms..."
+            except Exception as e:
+                return f"Rooms interface error: {str(e)}"
         else:
-            self.notify("Please login first")
+            return "Please login first"
     
     def _recent_command(self, args=None):
         """Handle recent rooms command."""
@@ -957,12 +1950,34 @@ class AeroStream(App):
         return "Disconnected from server"
     
     def _home_command(self, args=None):
-        """Handle home command."""
-        return "Navigated to home screen"
+        """Handle home command - return to main menu."""
+        if self.is_authenticated:
+            try:
+                splash_screen = self.query_one(SplashScreen)
+                username = getattr(splash_screen, 'username', 'User')
+                splash_screen.switch_to_main_menu(username)
+                return "Returned to home"
+            except Exception as e:
+                return f"Navigation Error: {str(e)}"
+        else:
+            return "Please login first"
     
     def _back_command(self, args=None):
         """Handle back command."""
-        return "Going back"
+        if self.is_authenticated:
+            try:
+                # Check if we're in a room screen and go back to main menu
+                splash_screen = self.query_one(SplashScreen)
+                if hasattr(splash_screen, 'current_screen') and splash_screen.current_screen == "rooms":
+                    username = getattr(splash_screen, 'username', 'User')
+                    splash_screen.switch_to_main_menu(username)
+                    return "Returned to main menu"
+                else:
+                    return "Already at main menu"
+            except:
+                return "Navigation not available"
+        else:
+            return "Please login first"
     
     def _next_command(self, args=None):
         """Handle next command."""
@@ -1016,11 +2031,19 @@ Colon Commands (press : then type):
         if not room_name:
             return "Room name is required. Use -r flag to specify room name"
         
-        # Simulate joining a room
-        if password:
-            return f"Joining room '{room_name}' with password..."
-        else:
-            return f"Joining room '{room_name}' (no password)..."
+        # If we're already in the rooms UI, instruct it to join
+        try:
+            splash = self.query_one(SplashScreen)
+            # If not currently in rooms, go there first
+            if getattr(splash, 'current_screen', '') != 'rooms':
+                username = getattr(splash, 'username', 'User')
+                splash.switch_to_rooms(username)
+            # Find the room widget and invoke join
+            room_widget = self.query_one(RoomChatWidget)
+            room_widget.join_room_by_name(room_name, password or None)
+            return f"Joining room '{room_name}'{' with password' if password else ''}..."
+        except Exception as e:
+            return f"Could not join room: {str(e)}"
     
     def _create_command(self, args: CommandArgs):
         """Handle create room command with parameters."""
@@ -1088,6 +2111,16 @@ Colon Commands (press : then type):
     def action_command_mode(self) -> None:
         """Dummy action - KeyboardHandler handles this."""
         pass
+    
+    def action_home(self) -> None:
+        """Navigate back to main menu/home."""
+        if self.is_authenticated:
+            try:
+                splash_screen = self.query_one(SplashScreen)
+                username = getattr(splash_screen, 'username', 'User')
+                splash_screen.switch_to_main_menu(username)
+            except Exception as e:
+                self.notify(f"Navigation error: {str(e)}", severity="error")
 
     def on_button_pressed(self, event) -> None:
         """Handle button press events."""
@@ -1109,8 +2142,7 @@ Colon Commands (press : then type):
                 self.notify("Please enter both username and password", severity="error")
                 return
             
-            # Show progress indicator
-            self.notify("Logging in...", severity="information")
+            # Silent progress
             
             # Perform login in background to avoid blocking UI
             from functools import partial
@@ -1119,7 +2151,6 @@ Colon Commands (press : then type):
         except Exception as e:
             # Unexpected error (UI elements not found, etc.)
             self.notify("An unexpected error occurred during login", severity="error")
-            self.notify(str(e), severity="error")
     
     async def _perform_login(self, username: str, password: str):
         """Worker function for background login."""
@@ -1291,8 +2322,7 @@ Colon Commands (press : then type):
                 self.notify("Password must be at least 6 characters long", severity="error")
                 return
             
-            # Show progress indicator
-            self.notify("Creating account...", severity="information")
+            # Silent progress
             
             # Perform registration in background to avoid blocking UI
             from functools import partial
@@ -1301,7 +2331,6 @@ Colon Commands (press : then type):
         except Exception as e:
             # Unexpected error (UI elements not found, etc.)
             self.notify("An unexpected error occurred during registration", severity="error")
-            self.notify(str(e), severity="error")
     
     def _register_worker(self, username: str, password: str):
         """Background worker for registration to prevent UI blocking."""
@@ -1338,7 +2367,7 @@ Colon Commands (press : then type):
             password_input = self.query_one("#password-input")
             
             # Registration successful
-            self.notify(f"Account created for {username}! Please login.", severity="information")
+            self.notify(f"Account created for {username}. Please login.", severity="information")
             
             # Clear both fields after successful registration
             username_input.value = ""
@@ -1404,7 +2433,7 @@ Colon Commands (press : then type):
             if self.splash_screen:
                 self.splash_screen.switch_to_login()
             
-            self.notify("Logged out successfully", severity="information")
+            self.notify("Logged out", severity="information")
             
         except Exception as e:
             # Even if there's an error, we should still logout locally
