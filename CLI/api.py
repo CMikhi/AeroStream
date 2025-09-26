@@ -7,7 +7,7 @@ import time
 
 # WebSocket import - optional dependency
 try:
-    import websocket
+    import websocket  # provided by 'websocket-client'
     WEBSOCKET_AVAILABLE = True
 except ImportError:
     WEBSOCKET_AVAILABLE = False
@@ -16,15 +16,10 @@ except ImportError:
 class IgniteAPIClient:
     """
     API client for the Ignite Chat application backend.
-    Provides interface to all backend routes with username/password authentication.
-    
-    The backend now uses a simplified authentication model with only:
-    - username (required, 3-20 characters)  
-    - password (required, must contain uppercase, lowercase, number, symbol, min 12 chars)
-    - role (optional, defaults to "user")
+    Provides interface to all backend routes with authentication handling.
     """
     
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = "http://homebred-irredeemably-madie.ngrok-free.dev/"):
         """
         Initialize the API client.
         
@@ -105,45 +100,33 @@ class IgniteAPIClient:
             raise requests.RequestException(f"Request failed: {error_message}") from e
 
     # Authentication Methods
-    def register(self, username: str, password: str, role: str = "user") -> Dict[str, Any]:
+    def register(self, username: str, password: str) -> Dict[str, Any]:
         """
         Register a new user.
         
         Args:
-            username: Username for the new user (3-20 characters)
-            password: Password (must contain uppercase, lowercase, number, and symbol, min 12 chars)
-            role: User role (default: "user")
+            username: Username for the new user
+            password: Password (must be at least 6 characters)
             
         Returns:
-            Registration response with access_token and user_id
+            Registration response
         """
         data = {
             "username": username,
             "password": password
         }
-        if role != "user":
-            data["role"] = role
-            
-        response = self._make_request('POST', '/register', data, include_auth=False)
-        
-        # Store token for future requests
-        if 'access_token' in response:
-            self.access_token = response['access_token']
-            # Calculate token expiration (15 minutes default from backend)
-            self.token_expires_at = datetime.now() + timedelta(minutes=15)
-            
-        return response
+        return self._make_request('POST', '/register', data, include_auth=False)
     
     def login(self, username: str, password: str) -> Dict[str, Any]:
         """
         Login and obtain access token.
         
         Args:
-            username: Username (required)
-            password: Password (required)
+            username: Username
+            password: Password
             
         Returns:
-            Login response with access_token, token_type, and user_id
+            Login response with access_token and token_type
         """
         data = {
             "username": username,
@@ -154,8 +137,8 @@ class IgniteAPIClient:
         # Store token for future requests
         if 'access_token' in response:
             self.access_token = response['access_token']
-            # Calculate token expiration (15 minutes from backend)
-            self.token_expires_at = datetime.now() + timedelta(minutes=15)
+            # Calculate token expiration (30 minutes from backend)
+            self.token_expires_at = datetime.now() + timedelta(minutes=30)
             
         return response
     
@@ -165,126 +148,10 @@ class IgniteAPIClient:
                 self.token_expires_at is not None and 
                 datetime.now() < self.token_expires_at)
     
-    def get_current_user(self) -> Dict[str, Any]:
-        """
-        Get current authenticated user information.
-        
-        Returns:
-            User information including id, username, and role
-        """
-        return self._make_request('GET', '/auth/me')
-    
-    def refresh_token(self, user_id: str, refresh_token: str) -> Dict[str, Any]:
-        """
-        Refresh the authentication token.
-        
-        Args:
-            user_id: User ID for token refresh
-            refresh_token: Current refresh token
-            
-        Returns:
-            New access token and refresh token
-        """
-        data = {
-            "userID": user_id,
-            "refreshToken": refresh_token
-        }
-        response = self._make_request('PATCH', '/auth/refresh', data, include_auth=False)
-        
-        # Update stored token if refresh successful
-        if 'accessToken' in response:
-            self.access_token = response['accessToken']
-            self.token_expires_at = datetime.now() + timedelta(minutes=15)
-            
-        return response
-    
-    def check_logged_in(self, access_token: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Check if a token is still valid.
-        
-        Args:
-            access_token: Token to check (uses current token if not provided)
-            
-        Returns:
-            Login status information
-        """
-        token_to_check = access_token or self.access_token
-        data = {"accessToken": token_to_check} if token_to_check else {}
-        return self._make_request('GET', '/auth/loggedIn', data)
-    
     def logout(self):
         """Clear authentication token."""
         self.access_token = None
         self.token_expires_at = None
-
-    # User Management Methods
-    def get_all_users(self) -> Dict[str, Any]:
-        """
-        Get all users (requires admin privileges).
-        
-        Returns:
-            List of all users
-        """
-        return self._make_request('GET', '/users')
-    
-    def get_user_by_id(self, user_id: str) -> Dict[str, Any]:
-        """
-        Get a user by their ID.
-        
-        Args:
-            user_id: User ID to retrieve
-            
-        Returns:
-            User information
-        """
-        return self._make_request('GET', f'/users/{user_id}')
-    
-    def update_user(self, user_id: str, username: Optional[str] = None, 
-                   role: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Update a user's information.
-        
-        Args:
-            user_id: User ID to update
-            username: New username (optional)
-            role: New role (optional)
-            
-        Returns:
-            Update response
-        """
-        data = {}
-        if username is not None:
-            data["username"] = username
-        if role is not None:
-            data["role"] = role
-            
-        return self._make_request('PUT', f'/users/{user_id}', data)
-    
-    def delete_user(self, user_id: str) -> Dict[str, Any]:
-        """
-        Delete a user.
-        
-        Args:
-            user_id: User ID to delete
-            
-        Returns:
-            Deletion response
-        """
-        return self._make_request('DELETE', f'/users/{user_id}')
-    
-    def update_user_role(self, user_id: str, role: str) -> Dict[str, Any]:
-        """
-        Update a user's role (admin operation).
-        
-        Args:
-            user_id: User ID to update
-            role: New role to assign
-            
-        Returns:
-            Role update response
-        """
-        data = {"role": role}
-        return self._make_request('PUT', f'/users/{user_id}/role', data)
 
     # Room Management Methods
     def create_room(self, room_name: str, private: bool = False, password: Optional[str] = None) -> Dict[str, Any]:
@@ -369,9 +236,9 @@ class IgniteAPIClient:
             Messages and count
         """
         if limit is not None:
-            endpoint = f'/messages/{room_name}/{limit}'
+            endpoint = f'/get_messages/{room_name}/{limit}'
         else:
-            endpoint = f'/messages/{room_name}'
+            endpoint = f'/get_messages/{room_name}'
             
         return self._make_request('GET', endpoint)
     
@@ -398,144 +265,209 @@ class IgniteAPIClient:
 
 class WebSocketClient:
     """
-    WebSocket client for real-time messaging with the Ignite Chat backend.
-    Works with the simplified username/password authentication system.
-    Note: Requires websocket-client package (pip install websocket-client)
+    Browser-parity WebSocket client for the Ignite Chat backend.
+    Mirrors the flow used by the working HTML client:
+    - Connect -> send auth -> receive auth_success -> receive message_history
+    - Send send_message events, receive message_sent/new_message
+    - Handles user_joined/user_left/ping/pong
+
+    Requires: websocket-client
     """
-    
+
     def __init__(self, base_url: str = "ws://localhost:8000", token: Optional[str] = None):
-        """
-        Initialize WebSocket client.
-        
-        Args:
-            base_url: WebSocket base URL (default: ws://localhost:8000)
-            token: JWT token for authentication
-        """
         if not WEBSOCKET_AVAILABLE:
-            raise ImportError("websocket-client package is required for WebSocket functionality. Install with: pip install websocket-client")
-        
-        self.base_url = base_url.rstrip('/')
+            raise ImportError(
+                "websocket-client package is required for WebSocket functionality. Install with: pip install websocket-client"
+            )
+
+        self._original_base_url = base_url or "ws://localhost:8000"
+        self.base_url = self._normalize_ws_base(self._original_base_url)
         self.token = token
-        self.ws = None
+
+        # Runtime fields
+        self.ws = None  # WebSocketApp instance set on connect
         self.is_connected = False
-        self.message_handlers = []
-        self._listen_thread: Optional[threading.Thread] = None
-        self._stop_listening = False
-    
-    def connect(self, room_name: str) -> bool:
+        self._ready = threading.Event()  # set after auth_success is received
+        self._stop = threading.Event()
+        self._connection_thread = None
+        self.message_handlers = []  # handlers receive the message dict
+
+    # ---------------------- public api ----------------------
+    def connect(self, room_name: str, api_client=None, wait_ready_seconds: float = 8.0) -> bool:
         """
-        Connect to a room via WebSocket.
-        
-        Args:
-            room_name: Name of the room to connect to
-            
-        Returns:
-            True if connection successful, False otherwise
+        Connect to the room and complete the same handshake as the web client.
+        Returns True only after auth_success is received.
         """
-        if not WEBSOCKET_AVAILABLE:
-            raise ImportError("websocket-client package is required")
-            
-        try:
-            ws_url = f"{self.base_url}/ws/{room_name}"
-            self.ws = websocket.create_connection(ws_url)  # type: ignore
-            
-            # Send authentication message
-            auth_message = {
-                "type": "auth",
-                "token": self.token
-            }
-            self.ws.send(json.dumps(auth_message))
-            
-            # Wait for auth response
-            response = json.loads(self.ws.recv())
-            if response.get("type") == "auth_success":
-                self.is_connected = True
-                self._stop_listening = False
-                
-                # Start listening thread
-                self._listen_thread = threading.Thread(target=self._listen_for_messages, daemon=True)
-                self._listen_thread.start()
-                
-                return True
-            else:
-                error_msg = response.get("message", "Authentication failed")
-                print(f"WebSocket auth failed: {error_msg}")
-                self.ws.close()
+        # Optional HTTP join validation like the web client
+        if api_client and hasattr(api_client, "join_room"):
+            try:
+                join_resp = api_client.join_room(room_name)
+                print(f"[WS] join_room validation: {join_resp}")
+            except Exception as e:
+                print(f"[WS] join_room validation failed: {e}")
                 return False
-                
-        except Exception as e:
-            print(f"WebSocket connection failed: {e}")
-            return False
-    
+
+        ws_url = self._build_ws_url(room_name)
+        origin = self._compute_origin()
+        header = self._build_headers_with_origin(origin)
+        print(f"[WS] Connecting to: {ws_url}\n      base_url={self.base_url}\n      origin={origin}\n      headers={header}")
+
+        # Build WebSocketApp with bound handlers and headers (browser parity)
+        self.ws = websocket.WebSocketApp(
+            ws_url,
+            header=header,
+            on_open=self._on_open,
+            on_message=self._on_message,
+            on_error=self._on_error,
+            on_close=self._on_close,
+        )
+
+        self._stop.clear()
+        self._ready.clear()
+
+        def _runner():
+            try:
+                # origin already set via header; keep pings like the browser keeps ws alive
+                self.ws.run_forever(
+                    ping_interval=25,
+                    ping_timeout=10,
+                )
+            except Exception as e:
+                print(f"[WS] run_forever exception: {e}")
+
+        self._connection_thread = threading.Thread(target=_runner, daemon=True)
+        self._connection_thread.start()
+
+        # Wait until auth_success or timeout
+        ok = self._ready.wait(timeout=wait_ready_seconds)
+        self.is_connected = ok and not self._stop.is_set()
+        if not self.is_connected:
+            print("[WS] Did not become ready before timeout (no auth_success). Common causes: invalid token, room doesn't exist, proxy stripping headers/origin.")
+        return self.is_connected
+
     def disconnect(self):
-        """Disconnect from WebSocket."""
-        self._stop_listening = True
+        self._stop.set()
         self.is_connected = False
-        
-        if self.ws:
-            self.ws.close()
+        try:
+            if self.ws:
+                self.ws.close()
+        finally:
             self.ws = None
-            
-        if self._listen_thread and self._listen_thread.is_alive():
-            self._listen_thread.join(timeout=1)
-    
+            if self._connection_thread and self._connection_thread.is_alive():
+                self._connection_thread.join(timeout=2)
+            self._connection_thread = None
+
     def send_message(self, message: str):
-        """
-        Send a message through WebSocket.
-        
-        Args:
-            message: Message content to send
-        """
-        if not self.is_connected or not self.ws:
+        if not (self.ws and self.is_connected):
             raise RuntimeError("WebSocket not connected")
-            
-        message_data = {
-            "type": "send_message",
-            "message": message
-        }
-        self.ws.send(json.dumps(message_data))
-    
+        payload = {"type": "send_message", "message": message}
+        try:
+            self.ws.send(json.dumps(payload))
+        except Exception as e:
+            print(f"[WS] send_message failed: {e}")
+            raise
+
     def add_message_handler(self, handler):
-        """
-        Add a message handler function.
-        
-        Args:
-            handler: Function that takes a message dict as parameter
-        """
         self.message_handlers.append(handler)
-    
+
     def remove_message_handler(self, handler):
-        """Remove a message handler."""
         if handler in self.message_handlers:
             self.message_handlers.remove(handler)
-    
-    def _listen_for_messages(self):
-        """Listen for incoming WebSocket messages (runs in separate thread)."""
-        while not self._stop_listening and self.is_connected and self.ws:
+
+    # ---------------------- internals ----------------------
+    def _normalize_ws_base(self, base_url: str) -> str:
+        # Accept http(s) or ws(s) or plain host
+        url = base_url.strip()
+        if url.endswith('/'):
+            url = url[:-1]
+
+        if url.startswith("http://"):
+            url = "ws://" + url[len("http://"):]
+        elif url.startswith("https://"):
+            url = "wss://" + url[len("https://"):]
+        elif url.startswith("ws://") or url.startswith("wss://"):
+            pass
+        else:
+            url = f"ws://{url}"
+        return url
+
+    def _build_ws_url(self, room_name: str) -> str:
+        # Ensure we don't duplicate /ws segment
+        if self.base_url.endswith("/ws"):
+            return f"{self.base_url}/{room_name}"
+        return f"{self.base_url}/ws/{room_name}"
+
+    def _compute_origin(self) -> str:
+        # Map ws(s) -> http(s) for Origin header
+        if self.base_url.startswith("wss://"):
+            return "https://" + self.base_url[len("wss://"):]
+        if self.base_url.startswith("ws://"):
+            return "http://" + self.base_url[len("ws://"):]
+        return "http://localhost"
+
+    def _build_headers(self) -> List[str]:
+        """Deprecated: kept for backward compatibility."""
+        return ["User-Agent: websocket-client-python"]
+
+    def _build_headers_with_origin(self, origin: str) -> List[str]:
+        headers: List[str] = [
+            "User-Agent: websocket-client-python",
+            f"Origin: {origin}",
+        ]
+        # Some reverse proxies (like ngrok) gate on this header when accessed outside a browser
+        if "ngrok" in self.base_url or "ngrok-free.dev" in self.base_url:
+            headers.append("ngrok-skip-browser-warning: true")
+        return headers
+
+    # ---------------------- ws callbacks ----------------------
+    def _on_open(self, ws):
+        print("[WS] on_open -> sending auth payload")
+        try:
+            auth = {"type": "auth", "token": self.token}
+            ws.send(json.dumps(auth))
+        except Exception as e:
+            print(f"[WS] failed to send auth: {e}")
+
+    def _emit(self, data: Dict[str, Any]):
+        for handler in list(self.message_handlers):
             try:
-                message = self.ws.recv()
-                if message:
-                    try:
-                        data = json.loads(message)
-                        # Call all registered message handlers
-                        for handler in self.message_handlers:
-                            try:
-                                handler(data)
-                            except Exception as e:
-                                print(f"Error in message handler: {e}")
-                    except json.JSONDecodeError:
-                        print(f"Received non-JSON message: {message}")
-                        
+                handler(data)
             except Exception as e:
-                # Handle WebSocket disconnection and other errors
-                if "Connection is already closed" in str(e) or "WebSocket connection" in str(e):
-                    print("WebSocket connection closed")
-                    break
-                else:
-                    print(f"Error receiving WebSocket message: {e}")
-                    break
-        
+                print(f"[WS] handler error: {e}")
+
+    def _on_message(self, ws, message: str):
+        try:
+            data = json.loads(message)
+        except Exception as e:
+            print(f"[WS] bad json: {e}; raw={message!r}")
+            return
+
+        mtype = data.get("type")
+        if mtype == "auth_success":
+            print("[WS] auth_success received; connection ready")
+            self._ready.set()
+            self.is_connected = True
+        elif mtype == "error":
+            print(f"[WS] server error: {data.get('message')}")
+        elif mtype == "message_history":
+            # Pass through to TUI so it can render the backlog
+            pass
+        elif mtype in ("new_message", "message_sent", "user_joined", "user_left", "pong"):
+            pass
+        # Emit everything for the TUI to handle uniformly
+        self._emit(data)
+
+    def _on_error(self, ws, error):
+        print(f"[WS] on_error: {error}")
+        # Keep connection state pessimistic
         self.is_connected = False
+
+    def _on_close(self, ws, status_code, msg):
+        print(f"[WS] on_close: {status_code} {msg}")
+        self.is_connected = False
+        self._stop.set()
+    
+
 
 
 # Example usage and convenience functions
@@ -546,29 +478,6 @@ def create_client() -> IgniteAPIClient:
 def create_websocket_client(token: Optional[str] = None) -> WebSocketClient:
     """Create a new WebSocket client instance."""
     return WebSocketClient(token=token)
-
-def authenticate_and_get_client(username: str, password: str, base_url: str = "http://localhost:8000") -> IgniteAPIClient:
-    """
-    Convenience function to create a client and authenticate in one step.
-    
-    Args:
-        username: Username for authentication
-        password: Password for authentication  
-        base_url: Backend server URL
-        
-    Returns:
-        Authenticated API client
-        
-    Raises:
-        requests.RequestException: If authentication fails
-    """
-    client = IgniteAPIClient(base_url)
-    client.login(username, password)
-    
-    if not client.is_authenticated():
-        raise requests.RequestException("Authentication failed")
-        
-    return client
 
 
 # Example usage
@@ -583,42 +492,31 @@ if __name__ == "__main__":
         print(f"Root response: {root_response}")
         
         # Register a user (optional, uncomment if needed)
-        # Note: Password must contain uppercase, lowercase, number, and symbol (min 12 chars)
         # print("Registering user...")
-        # register_response = client.register("test_user", "TestPassword123!")
+        # register_response = client.register("test_user", "test_password")
         # print(f"Register response: {register_response}")
         
-        # Login with username and password only
+        # Login
         print("Logging in...")
-        login_response = client.login("cam", "PANcakelover21!")
+        login_response = client.login("cam", "123456")
         print(f"Login response: {login_response}")
         
         if client.is_authenticated():
             print("Successfully authenticated!")
             
-            # Get current user info
-            print("Getting current user info...")
-            user_info = client.get_current_user()
-            print(f"Current user: {user_info}")
-            
             # Create a room
             print("Creating room...")
-            room_response = {}
-            try:
-                room_response = client.create_room("neverGeneral")
-            except requests.RequestException as e:
-                if hasattr(e, 'response') and e.response:
-                    print("Room already exists, proceeding...")
+            room_response = client.create_room("test_room")
             print(f"Room creation response: {room_response}")
             
             # Send a message
             print("Sending message...")
-            message_response = client.send_message("neverGeneral", "Hello from API client!")
+            message_response = client.send_message("test_room", "Hello from API client!")
             print(f"Message response: {message_response}")
             
             # Get messages
             print("Getting messages...")
-            messages_response = client.get_messages("neverGeneral")
+            messages_response = client.get_messages("test_room")
             print(f"Messages response: {messages_response}")
             
         else:
