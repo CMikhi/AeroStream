@@ -8,7 +8,7 @@ from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode, CommandArgs
 from floating_island import FloatingCommandLine, FloatingResultPanel
-from api import IgniteAPIClient, WebSocketClient
+from api import IgniteAPIClient
 import json
 import os
 
@@ -651,8 +651,7 @@ class RoomChatWidget(Static):
         self.current_room = "testui"
         self.users = [username]  # Start with current user
         
-        # WebSocket client for real-time updates
-        self.ws_client = None
+        # Polling timer for updates (WebSocket disabled)
         self.polling_timer = None
         self.last_message_count = 0
         
@@ -927,23 +926,21 @@ class RoomChatWidget(Static):
             if not message_text:
                 return
 
-            # Send message via API (WebSocket disabled for now)
+            # Send message via HTTP API; fallback to local storage
             message_sent = False
             try:
                 if self.api_client and self.api_client.is_authenticated():
                     response = self.api_client.send_message(self.current_room, message_text)
                     if response and "message" in response:
                         message_sent = True
-                        self.app.notify("✅ Message sent", severity="success", timeout=1)
-                        # Immediately refresh to show the new message
-                        self._load_room_messages()
-                        self.main_content.scroll_to(y=10000)
+                        self.app.notify("✅ Sent", severity="success", timeout=0.5)
+                        # Don't refresh immediately - let polling handle it for consistency
                     else:
                         self.app.notify("Failed to send message to server, storing locally", severity="warning")
                 else:
                     self.app.notify("Not connected to server, storing message locally", severity="information")
             except Exception as e:
-                # If API fails, fall back to local mode
+                # If both WebSocket and API fail, fall back to local mode
                 self.app.notify(f"Could not send to server: {str(e)}", severity="error")
             
             # Only store locally if server didn't handle it or failed
@@ -1024,55 +1021,34 @@ class RoomChatWidget(Static):
             self.app.notify("Use ':back' command or logout to return", severity="information")
     
     def _setup_realtime_updates(self) -> None:
-        """Setup real-time updates using polling."""
-        # Temporarily disable WebSocket and use polling only
+        """Setup real-time updates using polling only (WebSocket disabled)."""
         try:
             if self.api_client and self.api_client.is_authenticated():
-                self.app.notify("Using fast polling for real-time updates", severity="information")
-                # Start polling directly with faster interval
+                # Ensure only one polling timer is active
+                if self.polling_timer:
+                    try:
+                        self.polling_timer.stop()
+                    except Exception:
+                        pass
                 self.polling_timer = self.set_interval(1.0, self._polling_refresh)
+                self.app.notify("Using polling for updates (WebSocket disabled)", severity="information")
             else:
-                self.app.notify("Authentication required for real-time updates", severity="information")
+                self.app.notify("Authentication required for updates", severity="information")
         except Exception as e:
-            self.app.notify(f"Setup failed: {str(e)}", severity="warning")
+            # Last resort: try to at least start polling if possible
+            if self.api_client and self.api_client.is_authenticated():
+                self.polling_timer = self.set_interval(1.0, self._polling_refresh)
     
-    def _handle_websocket_message(self, message_data: dict) -> None:
-        """Handle incoming WebSocket messages."""
-        try:
-            message_type = message_data.get("type")
-            
-            if message_type == "new_message":
-                # New message received from another user
-                msg_data = message_data.get("data", {})
-                if "username" in msg_data and "content" in msg_data:
-                    # Update the UI on the main thread
-                    self.call_later(self._refresh_messages_display)
-            
-            elif message_type == "user_joined":
-                # User joined the room
-                user_data = message_data.get("data", {})
-                username = user_data.get("username", "Unknown")
-                self.app.notify(f"{username} joined the room", severity="information")
-                self.call_later(self._refresh_user_list)
-            
-            elif message_type == "user_left":
-                # User left the room
-                user_data = message_data.get("data", {})
-                username = user_data.get("username", "Unknown")
-                self.app.notify(f"{username} left the room", severity="information")
-                self.call_later(self._refresh_user_list)
-                
-        except Exception as e:
-            # Silently handle WebSocket message errors
-            pass
+    # WebSocket handlers removed - polling only
     
     def _refresh_messages_display(self) -> None:
-        """Refresh the messages display (called from WebSocket handler)."""
+        """Refresh the messages display."""
         self._load_room_messages()
         self.main_content.scroll_to(y=10000)
     
     def _cleanup_connections(self) -> None:
-        """Cleanup polling timer and any connections."""
+        """Cleanup WebSocket connections, polling timer and any connections."""
+        # No WebSocket to clean up
         # Stop polling timer if it's running
         if self.polling_timer:
             try:
@@ -1098,10 +1074,12 @@ class RoomChatWidget(Static):
                         self._load_room_messages()
                         self.main_content.scroll_to(y=10000)
                         
-                        # Notify about new messages if count increased
+                        # Notify about new messages if count increased (but keep it subtle)
                         if new_count > old_count and old_count > 0:
                             new_msgs = new_count - old_count
-                            self.app.notify(f"📨 {new_msgs} new message{'s' if new_msgs > 1 else ''}", severity="success", timeout=2)
+                            # Only show notification for multiple messages or if it's been a while
+                            if new_msgs > 1:
+                                self.app.notify(f"📨 {new_msgs} new messages", severity="information", timeout=1)
             except Exception as e:
                 # Only notify about connection issues occasionally to avoid spam
                 import time

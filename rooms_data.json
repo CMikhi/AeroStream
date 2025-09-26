@@ -1,27 +1,10 @@
 {
-    "General": {
+    "testui": {
         "users": [
             "brett"
         ],
         "messages": [
-            "brett: what's up"
+            "brett: what's up world"
         ]
-    },
-    "Random": {
-        "users": [],
-        "messages": []
-    },
-    "Help": {
-        "users": [],
-        "messages": []
-    },
-    "test": {
-        "users": [
-            "brett"
-        ],
-        "messages": [
-            "brett: this is test"
-        ],
-        "is_public": true
     }
 }
