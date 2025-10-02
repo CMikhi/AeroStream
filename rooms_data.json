@@ -1,0 +1,22 @@
+{
+    "global": {
+        "users": [
+            "brett"
+        ],
+        "messages": []
+    },
+    "testRoom": {
+        "users": [
+            "brett"
+        ],
+        "messages": [
+            "brett: afnofna"
+        ]
+    },
+    "test": {
+        "users": [
+            "brett"
+        ],
+        "messages": []
+    }
+}

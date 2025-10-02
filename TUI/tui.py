@@ -8,7 +8,7 @@ from PIL import Image
 from PIL import ImageEnhance
 from keyboard_handler import KeyboardHandler, KeyboardMode, CommandArgs
 from floating_island import FloatingCommandLine, FloatingResultPanel
-from api import IgniteAPIClient
+from api import IgniteAPIClient, WebSocketClient
 import json
 import os
 
@@ -203,10 +203,10 @@ def image_to_ascii(image_path: str, width: int = 100, contrast_factor: float = 1
 
 # Generate ASCII art from a .png file with color
 try:
-    CUSTOM_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="red")
+    CUSTOM_ASCII_ART = image_to_ascii("TUI/assets/ascii_art.png", width=80, color="red")
 except FileNotFoundError:
     try:
-        with open("CLI/assets/simple_ascii-art.txt", "r") as file:
+        with open("TUI/assets/simple_ascii-art.txt", "r") as file:
             original_art = file.read()
             # Apply color using Textual markup
             CUSTOM_ASCII_ART = f"[bright_cyan]{original_art}[/]"
@@ -226,18 +226,18 @@ except FileNotFoundError:
 # Generate alternative colored ASCII art variants for different contexts
 try:
     # Rainbow version for special occasions
-    RAINBOW_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="rainbow")
+    RAINBOW_ASCII_ART = image_to_ascii("TUI/assets/ascii_art.png", width=80, color="rainbow")
     
     # Fire effect for energy/action contexts  
-    FIRE_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="fire")
+    FIRE_ASCII_ART = image_to_ascii("TUI/assets/ascii_art.png", width=80, color="fire")
     
     # Ocean effect for calm/peaceful contexts
-    OCEAN_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="ocean")
+    OCEAN_ASCII_ART = image_to_ascii("TUI/assets/ascii_art.png", width=80, color="ocean")
     
     # Green for success/login contexts
-    SUCCESS_ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="bright_green")
+    SUCCESS_ASCII_ART = image_to_ascii("TUI/assets/ascii_art.png", width=80, color="bright_green")
 
-    ASCII_ART = image_to_ascii("CLI/assets/ascii_art.png", width=80, color="cyan")
+    ASCII_ART = image_to_ascii("TUI/assets/ascii_art.png", width=80, color="cyan")
 
 except FileNotFoundError:
     # Use the main ASCII art as fallbacks
@@ -249,10 +249,10 @@ except FileNotFoundError:
 def get_colored_ascii_art(color: str = "bright_cyan") -> str:
     """Get ASCII art with specified color. Useful for dynamic color changes."""
     try:
-        return image_to_ascii("CLI/assets/ascii_art.png", width=80, color=color)
+        return image_to_ascii("TUI/assets/ascii_art.png", width=80, color=color)
     except FileNotFoundError:
         try:
-            with open("CLI/assets/simple_ascii-art.txt", "r") as file:
+            with open("TUI/assets/simple_ascii-art.txt", "r") as file:
                 original_art = file.read()
                 # Apply the specified color
                 color_themes = {
@@ -679,9 +679,14 @@ class RoomChatWidget(Static):
         self.current_room = "global"
         self.users = [username]  # Start with current user
         
-        # Polling timer for updates (WebSocket disabled)
+        # Polling timer for updates (fallback when WebSocket unavailable)
         self.polling_timer = None
         self.last_message_count = 0
+
+        # WebSocket state
+        self.ws_client = None
+        self.ws_connected = False
+        self._ws_handler = None
         
         # Try to join the testui room via API
         self._join_default_room()
@@ -769,7 +774,7 @@ class RoomChatWidget(Static):
         self.roomBar.remove_children()
         
         # Add header with navigation hint
-        self.roomBar.mount(Static("󰋜 Rooms", classes="sidebar-header"))
+        self.roomBar.mount(Static("Rooms", classes="sidebar-header"))
         self.roomBar.mount(Static("ESC: Unfocus | ^H: Home", classes="nav-hint"))
         
         self.room_list = sorted(self.rooms.keys())
@@ -837,9 +842,9 @@ class RoomChatWidget(Static):
         try:
             if self.api_client and self.api_client.is_authenticated():
                 response = self.api_client.get_messages(self.current_room, limit=40)
-                if response and "messages" in response:
+                if response and "data" in response:
                     # Format API messages to match our expected format
-                    api_messages = response["messages"]
+                    api_messages = response["data"]
                     for msg_data in api_messages:
                         if isinstance(msg_data, dict) and "username" in msg_data and "content" in msg_data:
                             messages.append(f"{msg_data['username']}: {msg_data['content']}")
@@ -931,12 +936,18 @@ class RoomChatWidget(Static):
             room_name, is_public = result
             if room_name not in self.rooms:
                 # Try to create room on server
+                server_created = False
                 try:
                     if self.api_client and self.api_client.is_authenticated():
                         # Create room on server
                         response = self.api_client.create_room(room_name, private=not is_public)
+                        if response and 'message' in response:
+                            server_created = True
+                            self.app.notify(f"Room '{room_name}' created on server", severity="information")
+                        else:
+                            self.app.notify(f"Server room creation failed: {response}", severity="warning")
                 except Exception as e:
-                    pass
+                    self.app.notify(f"Server room creation error: {str(e)}", severity="error")
                 
                 # Create room locally
                 self.rooms[room_name] = {
@@ -947,8 +958,9 @@ class RoomChatWidget(Static):
                 save_rooms_data(self.rooms)
                 self._refresh_room_list()
                 # Show success message
+                status = "created on server" if server_created else "created locally"
                 self.main_content.mount(
-                    Static(f"→ Room #{room_name} created ({'public' if is_public else 'private'})", 
+                    Static(f"→ Room #{room_name} {status} ({'public' if is_public else 'private'})", 
                           classes="system-message")
                 )
 
@@ -971,25 +983,33 @@ class RoomChatWidget(Static):
                 # Try join existing
                 try:
                     resp = self.api_client.join_room(room_name, password=password)
-                    if resp and resp.get("success", False):
+                    if resp and 'message' in resp:
                         joined = True
-                except Exception:
+                        self.app.notify(f"Joined room '{room_name}' on server", severity="information")
+                    else:
+                        self.app.notify(f"Failed to join room: {resp}", severity="warning")
+                except Exception as join_error:
+                    self.app.notify(f"Join room error: {str(join_error)}", severity="error")
                     joined = False
 
                 # If join failed because room doesn't exist, try to create (public if no password specified)
                 if not joined:
                     try:
                         create_resp = self.api_client.create_room(room_name, private=bool(password), password=password)
-                        if create_resp and create_resp.get("success", False):
+                        if create_resp and 'message' in create_resp:
                             created = True
+                            self.app.notify(f"Created room '{room_name}' on server", severity="information")
                             # attempt join again
                             join_again = self.api_client.join_room(room_name, password=password)
-                            if join_again and join_again.get("success", False):
+                            if join_again and 'message' in join_again:
                                 joined = True
-                    except Exception:
-                        pass
+                                self.app.notify(f"Joined newly created room '{room_name}'", severity="information")
+                        else:
+                            self.app.notify(f"Failed to create room: {create_resp}", severity="warning")
+                    except Exception as create_error:
+                        self.app.notify(f"Create room error: {str(create_error)}", severity="error")
             else:
-                pass
+                self.app.notify("Not authenticated - working in local mode only", severity="warning")
 
             # Ensure local room exists
             if room_name not in self.rooms:
@@ -1040,11 +1060,14 @@ class RoomChatWidget(Static):
                     response = self.api_client.send_message(self.current_room, message_text)
                     if response and "message" in response:
                         message_sent = True
-                        # Don't refresh immediately - let polling handle it for consistency
+                        # Refresh messages immediately to show the sent message
+                        self._load_room_messages()
+                        self.main_content.scroll_to(y=10000)
+                        # Don't show notification for successful send - too noisy
                     else:
-                        pass
+                        self.app.notify(f"Server message failed: {response}", severity="warning")
                 else:
-                    pass
+                    self.app.notify("Not authenticated - message saved locally only", severity="warning")
             except Exception as e:
                 # If both WebSocket and API fail, fall back to local mode
                 self.app.notify(f"Could not send to server: {str(e)}", severity="error")
@@ -1127,24 +1150,150 @@ class RoomChatWidget(Static):
             pass
     
     def _setup_realtime_updates(self) -> None:
-        """Setup real-time updates using polling only (WebSocket disabled)."""
+        """Setup real-time updates preferring WebSocket, with polling fallback."""
         try:
+            # Clean up any existing timer/socket
+            if self.polling_timer:
+                try:
+                    self.polling_timer.stop()
+                except Exception:
+                    pass
+                self.polling_timer = None
+            # Try WebSocket first when authenticated
             if self.api_client and self.api_client.is_authenticated():
-                # Ensure only one polling timer is active
-                if self.polling_timer:
-                    try:
-                        self.polling_timer.stop()
-                    except Exception:
-                        pass
-                self.polling_timer = self.set_interval(1.0, self._polling_refresh)
+                if not self._connect_websocket():
+                    # Fallback to polling if WS not available
+                    self.polling_timer = self.set_interval(1.0, self._polling_refresh)
             else:
+                # Not authenticated; no realtime
                 pass
-        except Exception as e:
+        except Exception:
             # Last resort: try to at least start polling if possible
             if self.api_client and self.api_client.is_authenticated():
                 self.polling_timer = self.set_interval(1.0, self._polling_refresh)
-    
-    # WebSocket handlers removed - polling only
+
+    # WebSocket integration
+    def _connect_websocket(self) -> bool:
+        """Create and connect a WebSocket client for the current room."""
+        try:
+            if not self.api_client:
+                return False
+            self.ws_connected = False
+            # Instantiate WS client using same base URL and auth from API client
+            self.ws_client = WebSocketClient(base_url=self.api_client.base_url)
+
+            # Register handler that marshals back to the UI thread
+            def handler(payload):
+                try:
+                    # Marshal UI updates back to the main Textual thread via the App
+                    if hasattr(self, 'app') and self.app is not None:
+                        self.app.call_from_thread(self._on_ws_event, payload)
+                    else:
+                        self._on_ws_event(payload)
+                except Exception:
+                    # As a fallback, attempt direct call (may not be thread-safe)
+                    self._on_ws_event(payload)
+
+            self._ws_handler = handler
+            self.ws_client.add_message_handler(handler)
+
+            # Connect (also attempts server room join via api_client)
+            connected = self.ws_client.connect(self.current_room, api_client=self.api_client)
+            self.ws_connected = bool(connected)
+            return self.ws_connected
+        except Exception:
+            # Could be ImportError (missing python-socketio) or network error
+            try:
+                self.app.notify("Realtime not available, falling back to polling", severity="warning")
+            except Exception:
+                pass
+            self.ws_connected = False
+            self.ws_client = None
+            self._ws_handler = None
+            return False
+
+    def _disconnect_websocket(self) -> None:
+        """Disconnect and dispose of WebSocket client if present."""
+        try:
+            if self.ws_client:
+                if self._ws_handler:
+                    try:
+                        self.ws_client.remove_message_handler(self._ws_handler)
+                    except Exception:
+                        pass
+                try:
+                    self.ws_client.disconnect()
+                except Exception:
+                    pass
+        finally:
+            self.ws_client = None
+            self._ws_handler = None
+            self.ws_connected = False
+
+    def _on_ws_event(self, payload) -> None:
+        """Process WebSocket event payloads and update UI state."""
+        try:
+            event_type = str(payload.get("type") or payload.get("event") or "").lower()
+
+            if event_type == "auth_success":
+                self.ws_connected = True
+                return
+
+            if event_type in {"message_history", "history"}:
+                messages = payload.get("messages") or payload.get("data") or []
+                formatted = []
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        username = msg.get("username") or msg.get("user") or msg.get("from") or "?"
+                        content = msg.get("content") or msg.get("message") or msg.get("text") or ""
+                        formatted.append(f"{username}: {content}")
+                    elif isinstance(msg, str):
+                        formatted.append(msg)
+                # Replace local cache and refresh display
+                self.rooms.setdefault(self.current_room, {"users": [self.username], "messages": []})
+                self.rooms[self.current_room]["messages"] = formatted
+                self.last_message_count = len(formatted)
+                self._refresh_messages_display()
+                return
+
+            if event_type in {"new_message", "message_sent"}:
+                msg = payload.get("message") or payload.get("data") or payload
+                if isinstance(msg, dict):
+                    username = msg.get("username") or msg.get("user") or msg.get("from") or "?"
+                    content = msg.get("content") or msg.get("message") or msg.get("text") or ""
+                    line = f"{username}: {content}"
+                else:
+                    line = str(msg)
+                self.rooms.setdefault(self.current_room, {"users": [self.username], "messages": []})
+                self.rooms[self.current_room]["messages"].append(line)
+                self.last_message_count = len(self.rooms[self.current_room]["messages"])
+                self._refresh_messages_display()
+                return
+
+            if event_type == "user_joined":
+                username = payload.get("username") or payload.get("user")
+                if username and username not in self.users:
+                    self.users.append(username)
+                    self._refresh_user_list()
+                return
+
+            if event_type == "user_left":
+                username = payload.get("username") or payload.get("user")
+                if username and username in self.users:
+                    self.users.remove(username)
+                    self._refresh_user_list()
+                return
+
+            if event_type in {"disconnect", "connection_replaced", "force_disconnect", "error"}:
+                # Drop to polling for resilience
+                self.ws_connected = False
+                self._disconnect_websocket()
+                if self.api_client and self.api_client.is_authenticated() and not self.polling_timer:
+                    self.polling_timer = self.set_interval(1.0, self._polling_refresh)
+                return
+        except Exception:
+            # Keep UI stable even if event parsing fails
+            pass
     
     def _refresh_messages_display(self) -> None:
         """Refresh the messages display."""
@@ -1153,7 +1302,6 @@ class RoomChatWidget(Static):
     
     def _cleanup_connections(self) -> None:
         """Cleanup WebSocket connections, polling timer and any connections."""
-        # No WebSocket to clean up
         # Stop polling timer if it's running
         if self.polling_timer:
             try:
@@ -1161,15 +1309,23 @@ class RoomChatWidget(Static):
                 self.polling_timer = None
             except Exception as e:
                 pass  # Silently handle cleanup errors
+        # Disconnect any websocket
+        try:
+            self._disconnect_websocket()
+        except Exception:
+            pass
     
     def _polling_refresh(self) -> None:
         """Fast polling method for real-time updates."""
+        # If WebSocket is active, skip polling
+        if self.ws_connected:
+            return
         if self.api_client and self.api_client.is_authenticated():
             try:
                 # Fetch messages from API
                 response = self.api_client.get_messages(self.current_room, limit=50)
-                if response and "messages" in response:
-                    api_messages = response["messages"]
+                if response and "data" in response:
+                    api_messages = response["data"]
                     new_count = len(api_messages)
                     
                     # Only refresh if message count changed
@@ -2155,16 +2311,7 @@ Colon Commands (press : then type):
     async def _perform_login(self, username: str, password: str):
         """Worker function for background login."""
         try:
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(self.client.session, 'timeout', None)
-            self.client.session.timeout = 10  # 10 second timeout
-            
             login_result = self.client.login(username, password)
-            
-            # Reset timeout
-            if old_timeout:
-                self.client.session.timeout = old_timeout
             
             # Check if login was successful and call handler
             if self.client.is_authenticated():
@@ -2173,13 +2320,6 @@ Colon Commands (press : then type):
                 self._handle_login_failure("Invalid username or password")
             
         except Exception as e:
-            # Reset timeout
-            try:
-                if old_timeout:
-                    self.client.session.timeout = old_timeout
-            except:
-                pass
-            
             # Handle error
             self._handle_login_error(str(e))
     
@@ -2188,19 +2328,10 @@ Colon Commands (press : then type):
         try:
             self.notify("Connecting to server...", severity="information")
             
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(self.client.session, 'timeout', None)
-            self.client.session.timeout = 5  # Shorter timeout for faster failure
-            
             self.notify("Sending registration request...", severity="information")
             register_result = self.client.register(username, password)
             
             self.notify(f"Registration result: {register_result}", severity="information")
-            
-            # Reset timeout
-            if old_timeout:
-                self.client.session.timeout = old_timeout
             
             # Check if registration was successful
             if register_result and 'error' not in register_result:
@@ -2213,30 +2344,13 @@ Colon Commands (press : then type):
             
         except Exception as e:
             self.notify(f"Registration exception: {str(e)}", severity="error")
-            
-            # Reset timeout
-            try:
-                if old_timeout:
-                    self.client.session.timeout = old_timeout
-            except:
-                pass
-            
             # Handle error
             self._handle_register_error(str(e))
     
     def _login_worker(self, username: str, password: str):
         """Background worker for login to prevent UI blocking."""
         try:
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(self.client.session, 'timeout', None)
-            self.client.session.timeout = 10  # 10 second timeout
-            
             login_result = self.client.login(username, password)
-            
-            # Reset timeout
-            if old_timeout:
-                self.client.session.timeout = old_timeout
             
             # Check if login was successful
             if self.client.is_authenticated():
@@ -2247,13 +2361,6 @@ Colon Commands (press : then type):
                 self.call_from_thread(self._handle_login_failure, "Invalid username or password")
             
         except Exception as e:
-            # Reset timeout
-            try:
-                if old_timeout:
-                    self.client.session.timeout = old_timeout
-            except:
-                pass
-            
             # Schedule error handling on main thread
             self.call_from_thread(self._handle_login_error, str(e))
     
@@ -2335,28 +2442,12 @@ Colon Commands (press : then type):
     def _register_worker(self, username: str, password: str):
         """Background worker for registration to prevent UI blocking."""
         try:
-            # Set a reasonable timeout for the request
-            import requests
-            old_timeout = getattr(self.client.session, 'timeout', None)
-            self.client.session.timeout = 10  # 10 second timeout
-            
             register_result = self.client.register(username, password)
-            
-            # Reset timeout
-            if old_timeout:
-                self.client.session.timeout = old_timeout
             
             # Schedule UI updates on main thread
             self.call_from_thread(self._handle_register_success, username)
             
         except Exception as e:
-            # Reset timeout
-            try:
-                if old_timeout:
-                    self.client.session.timeout = old_timeout
-            except:
-                pass
-            
             # Schedule error handling on main thread
             self.call_from_thread(self._handle_register_error, str(e))
     
