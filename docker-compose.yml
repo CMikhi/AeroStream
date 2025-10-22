@@ -1,26 +1,17 @@
-version: '3.8'
-
 services:
   backend:
     build: .
     ports:
-      - "8000:8000"
+      - "3000:3000"
     env_file:
       - ./backend/src/.env
-    environment:
-      - NODE_ENV=production
-      - PORT=8000
-      - DATABASE_PATH=/app/data/database.db
-      # Ensure JWT secret present even if env_file path changes later
-      - JWT_SECRET=${JWT_SECRET:-your_super_secret_jwt_key_here_make_it_long_and_random}
     volumes:
       # Persist database data
       - database_data:/app/data
-      # Optional: Mount logs directory
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
       interval: 30s
       timeout: 10s
       retries: 3

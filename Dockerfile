@@ -22,9 +22,6 @@ RUN npm run build
 ###############################
 FROM node:22-alpine AS production
 
-ENV NODE_ENV=production \
-    PORT=8000
-
 WORKDIR /app/backend
 
 # Install dumb-init for proper signal handling
@@ -37,7 +34,6 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Copy built application
 COPY --from=builder /app/backend/dist ./dist
 
-# Copy entrypoint script from repository root
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 

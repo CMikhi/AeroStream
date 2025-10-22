@@ -129,30 +129,48 @@ export class AuthService {
 
 	/**
 	 * Refreshes the authentication token for the logged-in user.
+	 * Extracts the user ID from the refresh token payload and validates the token.
 	 *
-	 * @returns A promise that resolves to an object containing a success message and the user's new token
-	 * @throws {Error} When token is missing
-	 * @throws {Error} When token refresh fails
+	 * @param refreshToken - The refresh token to validate and use for generating new tokens
+	 * @returns A promise that resolves to an object containing a success message and the user's new tokens
+	 * @throws {UnauthorizedException} When refresh token is invalid or expired
+	 * @throws {UnauthorizedException} When user is not found or has no stored refresh token
 	 *
 	 * @example
 	 * ```typescript
-	 * const result = await authService.refresh();
+	 * const result = await authService.refresh('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
 	 * console.log(result.message); // "Token refreshed successfully"
+	 * console.log(result.accessToken); // New access token
+	 * console.log(result.newRefreshToken); // New refresh token
 	 * ```
 	 */
-	async refresh(userId: string, refreshToken: string): Promise<{ message: string; accessToken: string; newRefreshToken: string; }> {
-		const user = await this.dbService.findOne(userId);
-		if (!user?.id || !user.refreshTokenHash) throw new UnauthorizedException();
+	async refresh(refreshToken: string): Promise<{ message: string; accessToken: string; newRefreshToken: string; }> {
+		// Decode the refresh token to extract user ID
+		const payload = this.jwtService.decodeToken(refreshToken);
+		if (!payload || !payload.sub) {
+			throw new UnauthorizedException('Invalid refresh token');
+		}
 
+		const userId = payload.sub;
+		const user = await this.dbService.findOne(userId);
+		if (!user?.id || !user.refreshTokenHash) {
+			throw new UnauthorizedException('User not found or refresh token not set');
+		}
+
+		// Verify the refresh token matches the stored hash
 		const isValid = await this.jwtService.compareToken(
 			refreshToken,
 			user.refreshTokenHash,
 		);
 
-		if (!isValid) throw new UnauthorizedException();
+		if (!isValid) {
+			throw new UnauthorizedException('Invalid refresh token');
+		}
 
+		// Generate new tokens
 		const { accessToken, refreshToken: newRefreshToken, refreshTokenHash } = await this.jwtService.rotateTokens(user.id, user.role);
 
+		// Store the new refresh token hash
 		await this.dbService.SaveRefreshToken(user.id, refreshTokenHash);
 
 		return {
@@ -164,13 +182,10 @@ export class AuthService {
 
 	async getLoggedIn(accessToken: string): Promise<{ loggedIn: boolean; userId?: string }> {
 		try {
-			const isValid = await this.jwtService.verifyToken(accessToken);
-			return { loggedIn: isValid };
+			return { loggedIn: await this.jwtService.verifyToken(accessToken) };
 		} catch (error) {
 			// Suppress noisy log output during tests but keep for other environments
-			if (process.env.NODE_ENV !== 'test') {
-				console.log('Error verifying token', error as Error);
-			}
+			console.log('Error verifying token', error as Error);
 			return { loggedIn: false };
 		}
 	}

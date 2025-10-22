@@ -13,17 +13,29 @@ import { JwtService } from "./jwt.service";
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const secret = configService.get<string>("JWT_SECRET");
+        const accessExp = configService.get<string>("JWT_ACCESS_EXP");
+        const refreshExp = configService.get<string>("JWT_REFRESH_EXP");
         if (!secret) {
           throw new Error(
             "JWT_SECRET is not defined in the environment variables",
           );
         }
+        if (!accessExp) {
+          throw new Error(
+            "JWT_ACCESS_EXP is not defined in the environment variables",
+          );
+        }
+        if (!refreshExp) {
+          throw new Error(
+            "JWT_REFRESH_EXP is not defined in the environment variables",
+          );
+        }
 
         return {
-          secret, // Use the symmetric secret key
+          secret,
           signOptions: {
-            algorithm: "HS256", // Switch to HS256
-            expiresIn: configService.get<string>("JWT_ACCESS_EXP", "15m"),
+            algorithm: "HS256",
+            expiresIn: accessExp,
           },
         };
       },

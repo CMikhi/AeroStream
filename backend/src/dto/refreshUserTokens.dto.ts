@@ -1,10 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import { IsNotEmpty } from "class-validator";
+import { IsNotEmpty, IsString } from "class-validator";
 
 export class RefreshUserTokensDto {
-  @IsNotEmpty({ message: "User ID is required" })
-  readonly userID: string;
-
   @IsNotEmpty({ message: "Refresh token is required" })
-  readonly refreshToken: string;
+  @IsString({ message: "Refresh token must be a string" })
+  readonly refresh_token: string;
 }

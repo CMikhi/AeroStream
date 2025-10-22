@@ -36,13 +36,13 @@ class IgniteAPIError(Exception):
 
 
 class IgniteAPIClient:
-    """HTTP client for the NestJS Ignite backend with token management."""
+    """HTTP client for the NestJS AeroStream with token management."""
 
     DEFAULT_TIMEOUT = 10.0
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://0.0.0.0:3000",
         *,
         timeout: float = DEFAULT_TIMEOUT,
         retry_total: int = 3,
@@ -68,7 +68,7 @@ class IgniteAPIClient:
     # ---------------------------------------------------------------------
     @staticmethod
     def _normalize_base(base_url: str) -> str:
-        url = (base_url or "http://localhost:8000").strip()
+        url = (base_url or "http://localhost:3000").strip()
         if not url.startswith(("http://", "https://")):
             url = f"http://{url}"
         return url.rstrip("/ ")
@@ -222,13 +222,7 @@ class IgniteAPIClient:
     # ---------------------------------------------------------------------
     # Authentication API
     # ---------------------------------------------------------------------
-    def register(
-        self,
-        username: str,
-        password: str,
-        *,
-        role: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    def register(self, username: str, password: str, *, role: Optional[str] = None, ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "username": username,
             "password": password,
@@ -365,7 +359,7 @@ class WebSocketClient:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:3000",
         *,
         token: Optional[str] = None,
     ) -> None:
@@ -433,7 +427,7 @@ class WebSocketClient:
                 self.base_url,
                 namespaces=[self.namespace],
                 transports=["websocket", "polling"],
-                wait_timeout=wait_ready_seconds,
+                wait_timeout=int(wait_ready_seconds),
                 headers=self._build_headers(),
             )
         except Exception as exc:  # pragma: no cover - network dependent
@@ -484,7 +478,7 @@ class WebSocketClient:
     # ------------------------------------------------------------------
     @staticmethod
     def _normalize_http_base(base_url: str) -> str:
-        url = (base_url or "http://localhost:8000").strip()
+        url = (base_url or "http://localhost:3000").strip()
         if url.startswith("ws://"):
             url = "http://" + url[len("ws://") :]
         elif url.startswith("wss://"):

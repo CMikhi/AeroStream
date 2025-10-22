@@ -1,9 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import {
   IsNotEmpty,
   IsString,
   Length,
-  Matches,
   IsStrongPassword,
   IsOptional,
 } from "class-validator";
@@ -15,16 +13,16 @@ export class CreateUserDto {
   username: string;
 
   @IsNotEmpty({ message: "Password is required" })
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
-    message: "Password must contain uppercase, lowercase, and a number",
-  })
-  @IsStrongPassword({
-    minLength: 12,
-    minLowercase: 1,
-    minUppercase: 1,
-    minNumbers: 1,
-    minSymbols: 1,
-  })
+  @IsStrongPassword(
+    {
+      minLength: 12,
+      minLowercase: 1,
+      minUppercase: 1,
+      minNumbers: 1,
+      minSymbols: 1,
+    },
+    { message: "Password must be 12 characters, 1 lowercase, 1 uppercase, 1 number, and 1 symbol" },
+  )
   password: string;
 
   @IsOptional()

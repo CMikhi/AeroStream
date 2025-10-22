@@ -59,11 +59,12 @@ export class JwtService {
     const secret = this.configService.get<string>("JWT_SECRET");
     try {
       await this.jwtService.verifyAsync<JwtPayload>(token, {
-        secret, // Use symmetric secret
-        algorithms: ["HS256"], // Switch to HS256
+        secret,
+        algorithms: ["HS256"],
       });
       return true;
-    } catch {
+    } catch (error) {
+      console.error("Token verification error:", error);
       return false;
     }
   }

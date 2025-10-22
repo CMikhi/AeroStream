@@ -8,8 +8,8 @@
  * ENDPOINTS IMPLEMENTED:
  *
  * 1. Authentication Endpoints (No role required):
- *    - POST /auth/login
- *    - POST /auth/register
+ *    - POST /login
+ *    - POST /register
  *    - PATCH /auth/refresh
  *    - GET /auth/loggedIn
  *    - GET /auth/me (requires authentication only)
