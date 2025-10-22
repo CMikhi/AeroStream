@@ -6,11 +6,7 @@ import { DbModule } from "../db/db.module";
 import { JwtModule } from "../jwt/jwt.module";
 
 @Module({
-  imports: [
-    DbModule,
-    // Use forwardRef to handle potential circular dependencies
-    forwardRef(() => JwtModule),
-  ],
+  imports: [DbModule, forwardRef(() => JwtModule)],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard],
   exports: [AuthService, JwtAuthGuard],
