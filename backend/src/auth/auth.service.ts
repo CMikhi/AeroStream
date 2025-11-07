@@ -24,6 +24,8 @@ export class AuthService {
 
 	/**
 	 * Authenticates a user by validating their username and password credentials.
+	 * If parameters are invalid, placeholder hashes and IDs are used to prevent timing 
+	 * attacks, but are still rejected, even if placeholder hash is correct.
 	 *
 	 * @param loginUserDto - Login credentials containing username and password
 	 * @returns A promise that resolves to an object containing a success message and authentication token
@@ -42,7 +44,7 @@ export class AuthService {
 		// Find user by username
 		const user: User | null = await this.dbService.findOne(undefined, loginUserDto.username);
 
-		let isValid = !!user;
+		let isValid = !!user; // Assume invalid unless proven otherwise
 		const passwordHash = user?.password ?? '$2b$10$C6UzMDM.H6dfI/f/IKcEeO1jJXclB/6L6iRHIx6e.C5F9jq5Hn4e.';
 
 		if (!await bcrypt.compare(loginUserDto.password, passwordHash)) {
@@ -50,7 +52,7 @@ export class AuthService {
 		}
 
 		const userId = user?.id ?? 'ycuvybuuyvyderyfutg7iyunhbgjftru';
-		const userRole = user?.role ?? 'user';
+		const userRole = user?.role ?? "USER";
 
 		const tokens = await this.jwtService.rotateTokens(userId, userRole);
 
@@ -129,7 +131,6 @@ export class AuthService {
 
 	/**
 	 * Refreshes the authentication token for the logged-in user.
-	 * Extracts the user ID from the refresh token payload and validates the token.
 	 *
 	 * @param refreshToken - The refresh token to validate and use for generating new tokens
 	 * @returns A promise that resolves to an object containing a success message and the user's new tokens
@@ -139,7 +140,6 @@ export class AuthService {
 	 * @example
 	 * ```typescript
 	 * const result = await authService.refresh('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
-	 * console.log(result.message); // "Token refreshed successfully"
 	 * console.log(result.accessToken); // New access token
 	 * console.log(result.newRefreshToken); // New refresh token
 	 * ```
@@ -151,13 +151,12 @@ export class AuthService {
 			throw new UnauthorizedException('Invalid refresh token');
 		}
 
-		const userId = payload.sub;
+		const userId: string = payload.sub;
 		const user = await this.dbService.findOne(userId);
 		if (!user?.id || !user.refreshTokenHash) {
 			throw new UnauthorizedException('User not found or refresh token not set');
 		}
 
-		// Verify the refresh token matches the stored hash
 		const isValid = await this.jwtService.compareToken(
 			refreshToken,
 			user.refreshTokenHash,
@@ -167,10 +166,8 @@ export class AuthService {
 			throw new UnauthorizedException('Invalid refresh token');
 		}
 
-		// Generate new tokens
 		const { accessToken, refreshToken: newRefreshToken, refreshTokenHash } = await this.jwtService.rotateTokens(user.id, user.role);
 
-		// Store the new refresh token hash
 		await this.dbService.SaveRefreshToken(user.id, refreshTokenHash);
 
 		return {

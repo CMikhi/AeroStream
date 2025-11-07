@@ -1,11 +1,20 @@
 /* eslint-disable prettier/prettier */
-import { Controller, Get, Param, Body, Patch, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Body, Patch, Delete, UseGuards, Request } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../roles/roles.guard';
 import { Roles } from '../roles/roles.decorator';
 import { UserRole } from '../roles/roles.service';
+
+interface AuthenticatedRequest {
+	user: {
+		id: string;
+		email: string;
+		username: string;
+		role: string;
+	}
+}
 
 @Controller('users')
 @UseGuards(JwtAuthGuard) // All user endpoints require authentication
@@ -14,7 +23,7 @@ export class UsersController {
 
 	@Get()
 	@UseGuards(RolesGuard)
-	@Roles(UserRole.ADMIN) // Only admins can list all users
+	@Roles(UserRole.ADMIN)
 	async findAll() {
 		const users = await this.usersService.findAll();
 		if (!users.length) {
@@ -32,15 +41,15 @@ export class UsersController {
 		};
 	}
 
-	@Get(':uuid')
+	@Get('me')
 	@UseGuards(RolesGuard)
-	@Roles(UserRole.ADMIN, UserRole.USER) // Both admins and users can view user details
-	async findOne(@Param('uuid') uuid: string) {
-		const user = await this.usersService.findOne(uuid);
+	@Roles(UserRole.ADMIN, UserRole.USER)
+	async findOne(@Request() req: AuthenticatedRequest) {
+		const user = await this.usersService.findOne(req.user.id);
 		if (!user) {
 			return { message: 'User not found', status: 404, data: undefined };
 		}
-		// Don't return sensitive info like password hash and refresh token
+
 		return {
 			message: 'User retrieved successfully',
 			status: 200,
@@ -55,7 +64,7 @@ export class UsersController {
 
 	@Delete(':uuid')
 	@UseGuards(RolesGuard)
-	@Roles(UserRole.ADMIN) // Only admins can delete users
+	@Roles(UserRole.ADMIN) 
 	async deleteUser(@Param('uuid') uuid: string) {
 		const user = await this.usersService.remove(uuid);
 		if (!user) {
@@ -73,23 +82,18 @@ export class UsersController {
 
 	@Patch(':uuid')
 	@UseGuards(RolesGuard)
-	@Roles(UserRole.ADMIN, UserRole.USER) // Both admins and users can update user info
+	@Roles(UserRole.ADMIN, UserRole.USER)
 	async updateUser(
-		@Param('uuid') uuid: string,
-		@Body() updateUserDto: UpdateUserDto,
+		@Body() updateUserDto: UpdateUserDto, 
+		@Request() req: AuthenticatedRequest
 	) {
-		const updatedUser = await this.usersService.update(uuid, updateUserDto);
+		const updatedUser = await this.usersService.update(req.user.id, updateUserDto);
 		if (!updatedUser) {
 			return { message: 'User not found', status: 404 };
 		}
 		return {
 			message: 'User updated successfully',
 			status: 200,
-			data: {
-				id: updatedUser.id,
-				username: updatedUser.username,
-				role: updatedUser.role,
-			},
 		};
 	}
 }

@@ -4,7 +4,9 @@ import {
   Length,
   IsStrongPassword,
   IsOptional,
+  Matches,
 } from "class-validator";
+import { Transform } from "class-transformer";
 
 export class CreateUserDto {
   @IsNotEmpty({ message: "Username is required" })
@@ -21,11 +23,18 @@ export class CreateUserDto {
       minNumbers: 1,
       minSymbols: 1,
     },
-    { message: "Password must be 12 characters, 1 lowercase, 1 uppercase, 1 number, and 1 symbol" },
+    {
+      message:
+        "Password must be 12 characters, 1 lowercase, 1 uppercase, 1 number, and 1 symbol",
+    },
   )
   password: string;
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => value.toLowerCase() as string)
+  @Matches(/^(admin|user)$/, {
+    message: "Role must be either 'admin' or 'user'",
+  })
   role?: string;
 }

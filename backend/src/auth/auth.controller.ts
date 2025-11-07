@@ -101,7 +101,7 @@ export class AuthController {
    * valid JWT bearer token
    * @returns status 200 on success with user data
    * @throws UnauthorizedException if no valid JWT token is provided
-   * @throws ForbiddenException if user does not have access
+   * @throws ForbiddenException if user does not have access (Should not happen)
    */
   @Get("auth/me")
   @UseGuards(JwtAuthGuard)
