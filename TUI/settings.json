@@ -1,0 +1,10 @@
+{
+  "theme": "midnight",
+  "notifications": "enabled",
+  "sound": "enabled",
+  "message_preview": "enabled",
+  "auto_scroll": "enabled",
+  "timestamps": "enabled",
+  "compact_mode": "disabled",
+  "font_size": "medium"
+}

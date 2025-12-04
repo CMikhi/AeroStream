@@ -12,6 +12,7 @@ import { AuthModule } from "./auth/auth.module";
 import { JwtModule } from "./jwt/jwt.module";
 import { DbModule } from "./db/db.module";
 import { ConfigModule } from "@nestjs/config";
+import { DiscoveryModule } from "./discovery/discovery.module";
 
 /** DO NOT DELETE
  * app.module is the master module that imports all other modules
@@ -42,6 +43,7 @@ import { ConfigModule } from "@nestjs/config";
     AuthModule,
     JwtModule,
     DbModule,
+    DiscoveryModule,
   ],
 })
 export class AppModule {}

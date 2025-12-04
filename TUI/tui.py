@@ -446,9 +446,11 @@ class MainMenuScreen(Static):
                 username = getattr(splash_screen, 'username', 'User')
                 splash_screen.switch_to_rooms(username)
             elif event.action == "recent_rooms":
-                pass
+                self.app.notify("Recent Rooms - Coming soon!", severity="information")
             elif event.action == "settings":
-                pass
+                # Get username from splash screen and switch to settings
+                username = getattr(splash_screen, 'username', 'User')
+                splash_screen.switch_to_settings(username)
             elif event.action == "logout":
                 # Get the app and handle logout
                 app = self.app
@@ -492,7 +494,7 @@ class SplashScreen(Static):
         self.username = username
         self.current_screen = "main"
         
-        # Remove current content (login screen or room content)
+        # Remove current content (login screen, room content, or settings)
         try:
             login_screen = self.query_one("#login-screen")
             login_screen.remove()
@@ -502,6 +504,12 @@ class SplashScreen(Static):
         try:
             room_content = self.query_one("#room-content")
             room_content.remove()
+        except Exception:
+            pass
+        
+        try:
+            settings_screen = self.query_one("#settings-screen")
+            settings_screen.remove()
         except Exception:
             pass
         
@@ -532,15 +540,24 @@ class SplashScreen(Static):
     def switch_to_rooms(self, username: str):
         """Switch to room chat interface."""
         try:
+            # If already on rooms screen, do nothing to avoid duplicate widget ID error
+            if self.current_screen == "rooms":
+                return
+            
             self.current_screen = "rooms"
             self.username = username
             
-            # Remove main menu and add room content to this screen instead of pushing new screen
+            # Remove main menu and settings screen if present
             try:
                 main_screen = self.query_one("#main-screen")
                 main_screen.remove()
-            except Exception as e:
-                # Screen might not exist yet, that's okay
+            except Exception:
+                pass
+            
+            try:
+                settings_screen = self.query_one("#settings-screen")
+                settings_screen.remove()
+            except Exception:
                 pass
             
             # Get reference to parent app to pass client
@@ -554,25 +571,37 @@ class SplashScreen(Static):
             
         except Exception as e:
             self.app.notify(f"Error switching to rooms: {str(e)}", severity="error")
-
-
-# Room management constants and classes
-ROOMS_FILE = "rooms_data.json"
-
-def load_rooms_data():
-    """Load room data from JSON file."""
-    if os.path.exists(ROOMS_FILE):
+    
+    def switch_to_settings(self, username: str):
+        """Switch to settings screen."""
         try:
-            with open(ROOMS_FILE, 'r') as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            return {}
-    return {}
-
-def save_rooms_data(rooms_data):
-    """Save room data to JSON file."""
-    with open(ROOMS_FILE, 'w') as f:
-        json.dump(rooms_data, f, indent=4)
+            # If already on settings screen, do nothing
+            if self.current_screen == "settings":
+                return
+            
+            self.current_screen = "settings"
+            self.username = username
+            
+            # Remove main menu and room content if present
+            try:
+                main_screen = self.query_one("#main-screen")
+                main_screen.remove()
+            except Exception:
+                pass
+            
+            try:
+                room_content = self.query_one("#room-content")
+                room_content.remove()
+            except Exception:
+                pass
+            
+            # Create and mount settings screen
+            settings_screen = SettingsScreen(username)
+            settings_screen.id = "settings-screen"
+            self.mount(settings_screen, before="#command-line")
+            
+        except Exception as e:
+            self.app.notify(f"Error switching to settings: {str(e)}", severity="error")
 
 
 class CreateRoomModal(ModalScreen):
@@ -630,6 +659,288 @@ class JoinRoomModal(ModalScreen):
             password = self.query_one("#join-room-pass-input").value.strip()
             if room_name:
                 self.dismiss((room_name, password or None))
+
+
+class SettingItem(Static):
+    """A clickable setting item with label and current value."""
+    
+    can_focus = True  # Enable keyboard focus
+    
+    class Clicked(Message):
+        """Message sent when the setting item is clicked."""
+        def __init__(self, setting_id: str) -> None:
+            self.setting_id = setting_id
+            super().__init__()
+    
+    def __init__(self, icon: str, label: str, value: str, setting_id: str, **kwargs):
+        super().__init__(**kwargs)
+        self.icon = icon
+        self.label = label
+        self.value = value
+        self.setting_id = setting_id
+        self.is_selected = False
+    
+    def render(self) -> str:
+        # Show selection indicator when focused
+        prefix = "▶ " if self.is_selected else "  "
+        return f"{prefix}[bright_white]{self.icon}[/] [white]{self.label}[/]  [dim]{self.value}[/]"
+    
+    def on_focus(self) -> None:
+        """Handle focus event."""
+        self.is_selected = True
+        self.add_class("setting-item-focused")
+        self.refresh()
+    
+    def on_blur(self) -> None:
+        """Handle blur event."""
+        self.is_selected = False
+        self.remove_class("setting-item-focused")
+        self.refresh()
+    
+    def on_click(self) -> None:
+        """Send a message when the setting item is clicked."""
+        self.post_message(self.Clicked(self.setting_id))
+    
+    def on_key(self, event) -> None:
+        """Handle key presses when focused."""
+        if event.key in ("enter", "space"):
+            self.post_message(self.Clicked(self.setting_id))
+            event.stop()
+    
+    def update_value(self, new_value: str) -> None:
+        """Update the displayed value."""
+        self.value = new_value
+        self.refresh()
+
+
+class SettingsScreen(Static):
+    """Settings page for configuring application preferences."""
+    
+    BINDINGS = [
+        ("escape", "back_to_menu", "Back to Menu"),
+        ("ctrl+h", "back_to_menu", "Back to Menu"),
+        ("up", "focus_previous", "Previous Setting"),
+        ("down", "focus_next", "Next Setting"),
+        ("k", "focus_previous", "Previous Setting"),
+        ("j", "focus_next", "Next Setting"),
+        ("enter", "toggle_setting", "Toggle Setting"),
+        ("space", "toggle_setting", "Toggle Setting"),
+    ]
+    
+    # Default settings
+    DEFAULT_SETTINGS = {
+        "theme": "dark",
+        "notifications": "enabled",
+        "sound": "enabled",
+        "message_preview": "enabled",
+        "auto_scroll": "enabled",
+        "timestamps": "enabled",
+        "compact_mode": "disabled",
+        "font_size": "medium",
+    }
+    
+    # Setting order for navigation
+    SETTING_ORDER = [
+        "theme", "font_size", "compact_mode",
+        "notifications", "sound", "message_preview",
+        "auto_scroll", "timestamps"
+    ]
+    
+    THEME_OPTIONS = ["dark", "light", "midnight", "ocean", "forest"]
+    TOGGLE_OPTIONS = ["enabled", "disabled"]
+    FONT_SIZE_OPTIONS = ["small", "medium", "large"]
+    
+    def __init__(self, username: str = ""):
+        super().__init__()
+        self.username = username
+        self.settings = self.DEFAULT_SETTINGS.copy()
+        self.current_index = 0  # Track which setting is selected
+        self._load_settings()
+    
+    def _load_settings(self):
+        """Load settings from file if it exists."""
+        try:
+            settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
+            if os.path.exists(settings_path):
+                with open(settings_path, "r") as f:
+                    saved = json.load(f)
+                    self.settings.update(saved)
+        except Exception:
+            pass  # Use defaults on error
+    
+    def _save_settings(self):
+        """Save settings to file."""
+        try:
+            settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
+            with open(settings_path, "w") as f:
+                json.dump(self.settings, f, indent=2)
+        except Exception as e:
+            self.app.notify(f"Failed to save settings: {e}", severity="error")
+    
+    def compose(self) -> ComposeResult:
+        with Center():
+            with Middle():
+                with Vertical(classes="settings-container"):
+                    # Header
+                    yield Static("⚙️  Settings", classes="settings-header")
+                    yield Static("↑/↓ Navigate • Enter/Space Toggle • ESC Back", classes="settings-subtitle")
+                    
+                    # Settings sections
+                    with Vertical(classes="settings-section"):
+                        yield Static("Appearance", classes="settings-section-title")
+                        yield SettingItem("🎨", "Theme", self.settings["theme"], "theme", classes="setting-item")
+                        yield SettingItem("📏", "Font Size", self.settings["font_size"], "font_size", classes="setting-item")
+                        yield SettingItem("📦", "Compact Mode", self.settings["compact_mode"], "compact_mode", classes="setting-item")
+                    
+                    with Vertical(classes="settings-section"):
+                        yield Static("Notifications", classes="settings-section-title")
+                        yield SettingItem("🔔", "Notifications", self.settings["notifications"], "notifications", classes="setting-item")
+                        yield SettingItem("🔊", "Sound", self.settings["sound"], "sound", classes="setting-item")
+                        yield SettingItem("👁️", "Message Preview", self.settings["message_preview"], "message_preview", classes="setting-item")
+                    
+                    with Vertical(classes="settings-section"):
+                        yield Static("Chat", classes="settings-section-title")
+                        yield SettingItem("⬇️", "Auto-scroll", self.settings["auto_scroll"], "auto_scroll", classes="setting-item")
+                        yield SettingItem("🕐", "Timestamps", self.settings["timestamps"], "timestamps", classes="setting-item")
+                    
+                    # Back button
+                    with Center(classes="settings-buttons"):
+                        yield Button("← Back to Menu", id="settings-back-btn", variant="primary", classes="settings-back-btn")
+    
+    def on_mount(self) -> None:
+        """Focus the first setting item on mount."""
+        self._focus_current_setting()
+    
+    def _get_setting_items(self) -> list:
+        """Get all setting items in order."""
+        items = []
+        for setting_id in self.SETTING_ORDER:
+            try:
+                for item in self.query(SettingItem):
+                    if item.setting_id == setting_id:
+                        items.append(item)
+                        break
+            except Exception:
+                pass
+        return items
+    
+    def _focus_current_setting(self) -> None:
+        """Focus the setting at current_index."""
+        items = self._get_setting_items()
+        if items and 0 <= self.current_index < len(items):
+            items[self.current_index].focus()
+    
+    def action_focus_previous(self) -> None:
+        """Move focus to previous setting."""
+        items = self._get_setting_items()
+        if items:
+            self.current_index = (self.current_index - 1) % len(items)
+            self._focus_current_setting()
+    
+    def action_focus_next(self) -> None:
+        """Move focus to next setting."""
+        items = self._get_setting_items()
+        if items:
+            self.current_index = (self.current_index + 1) % len(items)
+            self._focus_current_setting()
+    
+    def action_toggle_setting(self) -> None:
+        """Toggle the currently focused setting."""
+        items = self._get_setting_items()
+        if items and 0 <= self.current_index < len(items):
+            current_item = items[self.current_index]
+            self._update_setting(current_item.setting_id)
+    
+    def _cycle_setting(self, setting_id: str) -> str:
+        """Cycle through available options for a setting."""
+        current = self.settings[setting_id]
+        
+        if setting_id == "theme":
+            options = self.THEME_OPTIONS
+        elif setting_id == "font_size":
+            options = self.FONT_SIZE_OPTIONS
+        else:
+            options = self.TOGGLE_OPTIONS
+        
+        try:
+            current_idx = options.index(current)
+            next_idx = (current_idx + 1) % len(options)
+            return options[next_idx]
+        except ValueError:
+            return options[0]
+    
+    def _update_setting(self, setting_id: str) -> None:
+        """Update a setting by cycling its value."""
+        new_value = self._cycle_setting(setting_id)
+        self.settings[setting_id] = new_value
+        
+        # Update the UI
+        try:
+            for item in self.query(SettingItem):
+                if item.setting_id == setting_id:
+                    item.value = new_value
+                    item.refresh()
+                    break
+        except Exception:
+            pass
+        
+        # Save settings
+        self._save_settings()
+        
+        # Notify user
+        self.app.notify(f"{setting_id.replace('_', ' ').title()}: {new_value}", severity="information")
+    
+    def on_setting_item_clicked(self, event: SettingItem.Clicked) -> None:
+        """Handle setting item clicks - cycle through options."""
+        self._update_setting(event.setting_id)
+    
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "settings-back-btn":
+            self._navigate_back()
+    
+    def action_back_to_menu(self) -> None:
+        """Navigate back to main menu."""
+        self._navigate_back()
+    
+    def _navigate_back(self) -> None:
+        """Navigate back to main menu."""
+        try:
+            splash_screen = self.app.query_one(SplashScreen)
+            splash_screen.switch_to_main_menu(self.username)
+        except Exception as e:
+            self.app.notify(f"Navigation error: {e}", severity="error")
+    
+    def set_setting(self, setting_id: str, value: str) -> str:
+        """Set a specific setting to a value (for command line use)."""
+        if setting_id not in self.DEFAULT_SETTINGS:
+            return f"Unknown setting: {setting_id}"
+        
+        # Validate value
+        if setting_id == "theme":
+            valid_values = self.THEME_OPTIONS
+        elif setting_id == "font_size":
+            valid_values = self.FONT_SIZE_OPTIONS
+        else:
+            valid_values = self.TOGGLE_OPTIONS
+        
+        if value not in valid_values:
+            return f"Invalid value '{value}'. Valid options: {', '.join(valid_values)}"
+        
+        self.settings[setting_id] = value
+        
+        # Update UI
+        try:
+            for item in self.query(SettingItem):
+                if item.setting_id == setting_id:
+                    item.value = value
+                    item.refresh()
+                    break
+        except Exception:
+            pass
+        
+        self._save_settings()
+        return f"{setting_id.replace('_', ' ').title()} set to: {value}"
 
 
 class ClickableRoom(Static):
@@ -935,34 +1246,31 @@ class RoomChatWidget(Static):
         if result is not None:
             room_name, is_public = result
             if room_name not in self.rooms:
-                # Try to create room on server
-                server_created = False
-                try:
-                    if self.api_client and self.api_client.is_authenticated():
-                        # Create room on server
-                        response = self.api_client.create_room(room_name, private=not is_public)
-                        if response and 'message' in response:
-                            server_created = True
-                            self.app.notify(f"Room '{room_name}' created on server", severity="information")
-                        else:
-                            self.app.notify(f"Server room creation failed: {response}", severity="warning")
-                except Exception as e:
-                    self.app.notify(f"Server room creation error: {str(e)}", severity="error")
+                # Require authentication for room creation
+                if not self.api_client or not self.api_client.is_authenticated():
+                    self.app.notify("You must be logged in to create a room", severity="error")
+                    return
                 
-                # Create room locally
-                self.rooms[room_name] = {
-                    "users": [self.username],
-                    "messages": [],
-                    "is_public": is_public
-                }
-                save_rooms_data(self.rooms)
-                self._refresh_room_list()
-                # Show success message
-                status = "created on server" if server_created else "created locally"
-                self.main_content.mount(
-                    Static(f"→ Room #{room_name} {status} ({'public' if is_public else 'private'})", 
-                          classes="system-message")
-                )
+                # Create room on server
+                try:
+                    response = self.api_client.create_room(room_name, private=not is_public)
+                    if response and 'message' in response:
+                        # Add room to local cache for UI
+                        self.rooms[room_name] = {
+                            "users": [self.username],
+                            "messages": [],
+                            "is_public": is_public
+                        }
+                        self._refresh_room_list()
+                        self.app.notify(f"Room '{room_name}' created successfully", severity="information")
+                        self.main_content.mount(
+                            Static(f"→ Room #{room_name} created ({'public' if is_public else 'private'})", 
+                                  classes="system-message")
+                        )
+                    else:
+                        self.app.notify(f"Failed to create room: {response}", severity="error")
+                except Exception as e:
+                    self.app.notify(f"Failed to create room: {str(e)}", severity="error")
 
     def handle_join_room_result(self, result) -> None:
         """Handle join room modal result."""
@@ -971,55 +1279,56 @@ class RoomChatWidget(Static):
             self.join_room_by_name(room_name, password)
 
     def join_room_by_name(self, room_name: str, password: str | None = None) -> None:
-        """Join a room by name using API when available, falling back to local, then switch."""
+        """Join a room by name using API. Requires authentication."""
         room_name = room_name.strip()
         if not room_name:
             return
 
+        # Require authentication for joining rooms
+        if not self.api_client or not self.api_client.is_authenticated():
+            self.app.notify("You must be logged in to join a room", severity="error")
+            return
+
         try:
             joined = False
-            created = False
-            if self.api_client and self.api_client.is_authenticated():
-                # Try join existing
+            # Try join existing room
+            try:
+                resp = self.api_client.join_room(room_name, password=password)
+                if resp and 'message' in resp:
+                    joined = True
+                    self.app.notify(f"Joined room '{room_name}'", severity="information")
+            except Exception as join_error:
+                # Room might not exist, will try to create below
+                pass
+
+            # If join failed, try to create and then join
+            if not joined:
                 try:
-                    resp = self.api_client.join_room(room_name, password=password)
-                    if resp and 'message' in resp:
-                        joined = True
-                        self.app.notify(f"Joined room '{room_name}' on server", severity="information")
+                    create_resp = self.api_client.create_room(room_name, private=bool(password), password=password)
+                    if create_resp and 'message' in create_resp:
+                        self.app.notify(f"Created room '{room_name}'", severity="information")
+                        # Attempt join again
+                        join_again = self.api_client.join_room(room_name, password=password)
+                        if join_again and 'message' in join_again:
+                            joined = True
                     else:
-                        self.app.notify(f"Failed to join room: {resp}", severity="warning")
-                except Exception as join_error:
-                    self.app.notify(f"Join room error: {str(join_error)}", severity="error")
-                    joined = False
+                        self.app.notify(f"Failed to create room: {create_resp}", severity="error")
+                        return
+                except Exception as create_error:
+                    self.app.notify(f"Failed to join or create room: {str(create_error)}", severity="error")
+                    return
 
-                # If join failed because room doesn't exist, try to create (public if no password specified)
-                if not joined:
-                    try:
-                        create_resp = self.api_client.create_room(room_name, private=bool(password), password=password)
-                        if create_resp and 'message' in create_resp:
-                            created = True
-                            self.app.notify(f"Created room '{room_name}' on server", severity="information")
-                            # attempt join again
-                            join_again = self.api_client.join_room(room_name, password=password)
-                            if join_again and 'message' in join_again:
-                                joined = True
-                                self.app.notify(f"Joined newly created room '{room_name}'", severity="information")
-                        else:
-                            self.app.notify(f"Failed to create room: {create_resp}", severity="warning")
-                    except Exception as create_error:
-                        self.app.notify(f"Create room error: {str(create_error)}", severity="error")
-            else:
-                self.app.notify("Not authenticated - working in local mode only", severity="warning")
+            if not joined:
+                self.app.notify(f"Could not join room '{room_name}'", severity="error")
+                return
 
-            # Ensure local room exists
+            # Add room to local cache for UI
             if room_name not in self.rooms:
                 self.rooms[room_name] = {"users": [self.username], "messages": []}
 
-            # Switch regardless; server history will load if available
-            prev_room = self.current_room
+            # Switch to the room
             self.current_room = room_name
             self.users = self.rooms[room_name]["users"]
-            save_rooms_data(self.rooms)
 
             # Update UI
             self._load_room_messages()
@@ -1030,21 +1339,8 @@ class RoomChatWidget(Static):
             # Restart polling for new room
             self._setup_realtime_updates()
 
-            # Notify outcome
-            # Silent on join success/fallback
         except Exception as e:
-            # On unexpected error, fall back to local join and notify
-            if room_name not in self.rooms:
-                self.rooms[room_name] = {"users": [self.username], "messages": []}
-            self.current_room = room_name
-            self.users = self.rooms[room_name]["users"]
-            save_rooms_data(self.rooms)
-            self._load_room_messages()
-            self._refresh_user_list()
-            self._refresh_room_list()
-            self.chat_input.placeholder = f"Message #{room_name}..."
-            self._setup_realtime_updates()
-            pass
+            self.app.notify(f"Error joining room: {str(e)}", severity="error")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle message input."""
@@ -1053,34 +1349,23 @@ class RoomChatWidget(Static):
             if not message_text:
                 return
 
-            # Send message via HTTP API; fallback to local storage
-            message_sent = False
+            # Require authentication for sending messages
+            if not self.api_client or not self.api_client.is_authenticated():
+                self.app.notify("You must be logged in to send messages", severity="error")
+                event.input.value = ""
+                return
+
+            # Send message via HTTP API
             try:
-                if self.api_client and self.api_client.is_authenticated():
-                    response = self.api_client.send_message(self.current_room, message_text)
-                    if response and "message" in response:
-                        message_sent = True
-                        # Refresh messages immediately to show the sent message
-                        self._load_room_messages()
-                        self.main_content.scroll_to(y=10000)
-                        # Don't show notification for successful send - too noisy
-                    else:
-                        self.app.notify(f"Server message failed: {response}", severity="warning")
+                response = self.api_client.send_message(self.current_room, message_text)
+                if response and "message" in response:
+                    # Refresh messages immediately to show the sent message
+                    self._load_room_messages()
+                    self.main_content.scroll_to(y=10000)
                 else:
-                    self.app.notify("Not authenticated - message saved locally only", severity="warning")
+                    self.app.notify(f"Failed to send message: {response}", severity="error")
             except Exception as e:
-                # If both WebSocket and API fail, fall back to local mode
-                self.app.notify(f"Could not send to server: {str(e)}", severity="error")
-            
-            # Only store locally if server didn't handle it or failed
-            if not message_sent:
-                message = f"{self.username}: {message_text}"
-                self.rooms[self.current_room]["messages"].append(message)
-                save_rooms_data(self.rooms)
-                # Refresh messages display to show local message
-                self._load_room_messages()
-                # Auto scroll to bottom for new messages
-                self.main_content.scroll_to(y=10000)
+                self.app.notify(f"Failed to send message: {str(e)}", severity="error")
             
             # Clear input
             event.input.value = ""
@@ -1859,6 +2144,82 @@ class AeroStream(App):
         text-align: center;
         border: solid #45475a;
     }
+    
+    /* Settings Screen Styles */
+    .settings-container {
+        width: 70;
+        height: auto;
+        padding: 2;
+        align: center middle;
+    }
+    
+    .settings-header {
+        color: #89b4fa;
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 0;
+        padding: 1;
+    }
+    
+    .settings-subtitle {
+        color: #6c7086;
+        text-align: center;
+        text-style: italic;
+        margin-bottom: 2;
+    }
+    
+    .settings-section {
+        width: 100%;
+        margin-bottom: 1;
+        padding: 1;
+        background: #181825;
+        border: solid #45475a;
+    }
+    
+    .settings-section-title {
+        color: #b4befe;
+        text-style: bold;
+        margin-bottom: 1;
+        padding-left: 1;
+        border-bottom: solid #45475a;
+        padding-bottom: 1;
+    }
+    
+    .setting-item {
+        padding: 1;
+        margin: 0 1;
+        color: #cdd6f4;
+        background: #313244;
+        margin-bottom: 1;
+    }
+    
+    .setting-item:hover {
+        background: #45475a;
+        color: #89b4fa;
+    }
+    
+    .setting-item:focus {
+        background: #45475a;
+        color: #89b4fa;
+        border-left: thick #89b4fa;
+    }
+    
+    .setting-item-focused {
+        background: #45475a;
+        color: #89b4fa;
+        border-left: thick #89b4fa;
+    }
+    
+    .settings-buttons {
+        margin-top: 2;
+        width: 100%;
+        align: center middle;
+    }
+    
+    .settings-back-btn {
+        width: 20;
+        height: 3;
+    }
     """
 
     # KEYBOARD SHORTCUTS INTEGRATION --- DO NOT TOUCH ---
@@ -1914,6 +2275,16 @@ class AeroStream(App):
             ["new"],
             {"r": "room name to create", "p": "password for the room"}
         )
+        
+        # Settings commands with parameter support
+        self.keyboard_handler.register_command(
+            "set", self._set_command,
+            "Set a setting value",
+            ["setting"],
+            {"s": "setting name", "v": "value to set"}
+        )
+        self.keyboard_handler.register_command("get", self._get_command, "Get current setting value", ["getsetting"])
+        self.keyboard_handler.register_command("toggle", self._toggle_command, "Toggle a setting", ["t"])
         
         # Additional Vim-style commands
         self.keyboard_handler.register_command("version", self._version_command, "Show application version", ["v", "ver"])
@@ -2074,9 +2445,15 @@ class AeroStream(App):
     def _settings_command(self, args=None):
         """Handle settings command."""
         if self.is_authenticated:
-            self.notify("Selected: Settings")
+            try:
+                splash_screen = self.query_one(SplashScreen)
+                username = getattr(splash_screen, 'username', 'User')
+                splash_screen.switch_to_settings(username)
+                return "Opening settings..."
+            except Exception as e:
+                return f"Settings error: {str(e)}"
         else:
-            self.notify("Please login first")
+            return "Please login first"
     
     # TODO: Update to variable version function
     def _version_command(self, args=None):
@@ -2094,8 +2471,167 @@ class AeroStream(App):
         return "Interface refreshed"
     
     def _theme_command(self, args=None):
-        """Handle theme command."""
-        return "Theme toggle not yet implemented"
+        """Handle theme command - cycle through themes."""
+        return self._toggle_command(CommandArgs("toggle", flags={"s": "theme"}, positional=[], raw_args=[]))
+    
+    def _set_command(self, args: CommandArgs):
+        """Handle set command for settings."""
+        if not args or not args.flags:
+            return """Usage: :set -s <setting> -v <value>
+Settings: theme, font_size, compact_mode, notifications, sound, message_preview, auto_scroll, timestamps
+Example: :set -s theme -v dark"""
+        
+        setting_name = args.flags.get('s')
+        value = args.flags.get('v')
+        
+        if not setting_name:
+            return "Setting name required. Use -s flag. Example: :set -s theme -v dark"
+        
+        if not value:
+            return f"Value required. Use -v flag. Example: :set -s {setting_name} -v <value>"
+        
+        # Get valid settings from SettingsScreen defaults
+        valid_settings = SettingsScreen.DEFAULT_SETTINGS.keys()
+        if setting_name not in valid_settings:
+            return f"Unknown setting: {setting_name}. Valid: {', '.join(valid_settings)}"
+        
+        # Validate value
+        if setting_name == "theme":
+            valid_values = SettingsScreen.THEME_OPTIONS
+        elif setting_name == "font_size":
+            valid_values = SettingsScreen.FONT_SIZE_OPTIONS
+        else:
+            valid_values = SettingsScreen.TOGGLE_OPTIONS
+        
+        if value not in valid_values:
+            return f"Invalid value '{value}'. Valid options: {', '.join(valid_values)}"
+        
+        # Update and save settings
+        try:
+            settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
+            
+            settings = SettingsScreen.DEFAULT_SETTINGS.copy()
+            if os.path.exists(settings_path):
+                with open(settings_path, "r") as f:
+                    settings.update(json.load(f))
+            
+            settings[setting_name] = value
+            
+            with open(settings_path, "w") as f:
+                json.dump(settings, f, indent=2)
+            
+            # Update settings screen if it exists
+            try:
+                settings_screen = self.query_one(SettingsScreen)
+                settings_screen.settings[setting_name] = value
+                for item in settings_screen.query(SettingItem):
+                    if item.setting_id == setting_name:
+                        item.value = value
+                        item.refresh()
+                        break
+            except Exception:
+                pass
+            
+            return f"{setting_name.replace('_', ' ').title()} set to: {value}"
+        except Exception as e:
+            return f"Failed to save setting: {e}"
+    
+    def _get_command(self, args: CommandArgs):
+        """Handle get command to show current setting value."""
+        if not args or not args.positional:
+            # Show all settings
+            try:
+                settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
+                
+                settings = SettingsScreen.DEFAULT_SETTINGS.copy()
+                if os.path.exists(settings_path):
+                    with open(settings_path, "r") as f:
+                        settings.update(json.load(f))
+                
+                result = "Current Settings:\n"
+                for key, value in settings.items():
+                    result += f"  {key}: {value}\n"
+                return result.strip()
+            except Exception as e:
+                return f"Error reading settings: {e}"
+        
+        setting_name = args.positional[0]
+        if setting_name not in SettingsScreen.DEFAULT_SETTINGS:
+            return f"Unknown setting: {setting_name}"
+        
+        try:
+            settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
+            
+            settings = SettingsScreen.DEFAULT_SETTINGS.copy()
+            if os.path.exists(settings_path):
+                with open(settings_path, "r") as f:
+                    settings.update(json.load(f))
+            
+            return f"{setting_name}: {settings.get(setting_name, 'not set')}"
+        except Exception as e:
+            return f"Error reading setting: {e}"
+    
+    def _toggle_command(self, args: CommandArgs):
+        """Handle toggle command to cycle a setting."""
+        if not args or (not args.positional and not args.flags):
+            return """Usage: :toggle <setting> or :toggle -s <setting>
+Settings: theme, font_size, compact_mode, notifications, sound, message_preview, auto_scroll, timestamps"""
+        
+        setting_name = args.flags.get('s') if args.flags else None
+        if not setting_name and args.positional:
+            setting_name = args.positional[0]
+        
+        if not setting_name:
+            return "Setting name required"
+        
+        if setting_name not in SettingsScreen.DEFAULT_SETTINGS:
+            return f"Unknown setting: {setting_name}"
+        
+        try:
+            settings_path = os.path.join(os.path.dirname(__file__), "settings.json")
+            
+            settings = SettingsScreen.DEFAULT_SETTINGS.copy()
+            if os.path.exists(settings_path):
+                with open(settings_path, "r") as f:
+                    settings.update(json.load(f))
+            
+            current = settings.get(setting_name)
+            
+            # Cycle to next value
+            if setting_name == "theme":
+                options = SettingsScreen.THEME_OPTIONS
+            elif setting_name == "font_size":
+                options = SettingsScreen.FONT_SIZE_OPTIONS
+            else:
+                options = SettingsScreen.TOGGLE_OPTIONS
+            
+            try:
+                current_idx = options.index(current)
+                next_idx = (current_idx + 1) % len(options)
+                new_value = options[next_idx]
+            except ValueError:
+                new_value = options[0]
+            
+            settings[setting_name] = new_value
+            
+            with open(settings_path, "w") as f:
+                json.dump(settings, f, indent=2)
+            
+            # Update settings screen if it exists
+            try:
+                settings_screen = self.query_one(SettingsScreen)
+                settings_screen.settings[setting_name] = new_value
+                for item in settings_screen.query(SettingItem):
+                    if item.setting_id == setting_name:
+                        item.value = new_value
+                        item.refresh()
+                        break
+            except Exception:
+                pass
+            
+            return f"{setting_name.replace('_', ' ').title()}: {new_value}"
+        except Exception as e:
+            return f"Failed to toggle setting: {e}"
     
     def _connect_command(self, args=None):
         """Handle connect command."""
@@ -2159,17 +2695,31 @@ class AeroStream(App):
         """Handle custom help command with both single-key and colon commands."""
         help_text = """
 Colon Commands (press : then type):
+  Navigation:
     :help, :h         - Show this help
-    :login, :l        - Go to login
-    :register, :r     - Go to register
+    :settings, :config - Open settings screen
     :rooms, :p        - Go to rooms
     :recent, :t       - Recent rooms
-    :settings, :config - Settings
-    :join, :j -r <room> -p <pass> - Join a room
-    :create, :new -r <room> -p <pass> - Create a room
-    :version, :v      - Show version
-    :status, :st      - Show status
-    :refresh, :reload - Refresh interface
+    :home, :back      - Return to main menu
+    
+  Settings Commands:
+    :set -s <name> -v <value>  - Set a setting
+    :get [setting]    - Show setting value(s)
+    :toggle <setting> - Cycle setting value
+    :theme            - Cycle through themes
+    
+  Settings: theme, font_size, compact_mode,
+    notifications, sound, message_preview,
+    auto_scroll, timestamps
+    
+  Room Commands:
+    :join -r <room> [-p <pass>]  - Join room
+    :create -r <room> [-p <pass>] - Create room
+    
+  Settings Screen Keys:
+    ↑/↓ or j/k   - Navigate settings
+    Enter/Space  - Toggle setting
+    ESC          - Back to menu
 """
         return help_text.strip()
     

@@ -3,7 +3,7 @@ import json
 import logging
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 import requests
 from requests import Response
@@ -15,6 +15,16 @@ try:  # Optional dependency for realtime features
     SOCKETIO_AVAILABLE = True
 except ImportError:
     raise ImportError("python-socketio is required for realtime features. Install with: pip install python-socketio")
+
+# Import discovery module (optional)
+try:
+    from discovery import discover_servers, DiscoveredServer, ServerDiscovery
+    DISCOVERY_AVAILABLE = True
+except ImportError:
+    DISCOVERY_AVAILABLE = False
+
+if TYPE_CHECKING:
+    from discovery import DiscoveredServer
 
 logger = logging.getLogger(__name__)
 MessageHandler = Callable[[Dict[str, Any]], None]
@@ -241,12 +251,11 @@ class IgniteAPIClient:
         return response
 
     def refresh_access_token(self) -> Dict[str, Any]:
-        if not (self.refresh_token and self.user_id):
+        if not self.refresh_token:
             raise IgniteAPIError("Refresh token is not available", status_code=401)
 
         payload = {
-            "userID": self.user_id,
-            "refreshToken": self.refresh_token,
+            "refresh_token": self.refresh_token,
         }
         response = self._make_request(
             "PATCH",
@@ -578,3 +587,60 @@ def create_client(**kwargs: Any) -> IgniteAPIClient:
 
 def create_websocket_client(**kwargs: Any) -> WebSocketClient:
     return WebSocketClient(**kwargs)
+
+
+def create_client_with_discovery(
+    timeout: float = 5.0,
+    **kwargs: Any,
+) -> Optional[IgniteAPIClient]:
+    """
+    Create an API client by discovering a server on the local network via mDNS.
+    
+    Args:
+        timeout: How long to wait for server discovery in seconds
+        **kwargs: Additional arguments to pass to IgniteAPIClient
+        
+    Returns:
+        IgniteAPIClient connected to the first discovered server, or None if no server found
+        
+    Example:
+        client = create_client_with_discovery(timeout=3.0)
+        if client:
+            client.login("user", "pass")
+    """
+    if not DISCOVERY_AVAILABLE:
+        raise ImportError(
+            "zeroconf is required for server discovery. Install with: pip install zeroconf"
+        )
+    
+    servers = discover_servers(timeout=timeout)
+    if not servers:
+        logger.warning("No Ignite servers found on the network")
+        return None
+    
+    server = servers[0]
+    logger.info("Connecting to discovered server: %s at %s", server.name, server.base_url)
+    return IgniteAPIClient(base_url=server.base_url, **kwargs)
+
+
+def discover_and_list_servers(timeout: float = 5.0) -> List["DiscoveredServer"]:
+    """
+    Discover all Ignite servers on the local network.
+    
+    Args:
+        timeout: How long to wait for discovery in seconds
+        
+    Returns:
+        List of DiscoveredServer objects
+        
+    Example:
+        servers = discover_and_list_servers()
+        for server in servers:
+            print(f"{server.name}: {server.base_url}")
+    """
+    if not DISCOVERY_AVAILABLE:
+        raise ImportError(
+            "zeroconf is required for server discovery. Install with: pip install zeroconf"
+        )
+    
+    return discover_servers(timeout=timeout)
